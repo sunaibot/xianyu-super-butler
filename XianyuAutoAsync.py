@@ -484,14 +484,26 @@ class XianyuLive:
 
     def _calculate_retry_delay(self, error_msg: str) -> int:
         """根据错误类型和失败次数计算重试延迟"""
+        # Token 获取失败（通常是风控触发）- 长延迟，让风控冷却
+        # 避免短时间内反复调用 token API，加重风控
+        if "Token获取失败" in error_msg or "token" in error_msg.lower() and "失败" in error_msg:
+            # 第1次60秒，第2次120秒，第3次180秒...最大600秒（10分钟）
+            delay = min(60 * self.connection_failures, 600)
+            logger.warning(f"【{self.cookie_id}】Token获取失败，等待 {delay} 秒让风控冷却后重试")
+            return delay
+
+        # 滑块验证失败 - 中等延迟，避免反复触发滑块
+        if "滑块" in error_msg or "captcha" in error_msg.lower() or "验证" in error_msg:
+            return min(30 * self.connection_failures, 180)
+
         # WebSocket意外断开 - 短延迟
         if "no close frame received or sent" in error_msg:
             return min(3 * self.connection_failures, 15)
-        
+
         # 网络连接问题 - 长延迟
         elif "Connection refused" in error_msg or "timeout" in error_msg.lower():
             return min(10 * self.connection_failures, 60)
-        
+
         # 其他未知错误 - 中等延迟
         else:
             return min(5 * self.connection_failures, 30)
@@ -1470,44 +1482,46 @@ class XianyuLive:
                 # 对于敏感信息，只显示部分
                 if key == 'sign':
                     logger.info(f"【{self.cookie_id}】  {key}: {value[:20]}...{value[-10:] if len(value) > 30 else value} (长度: {len(value)})")
+                elif key in ('smToken', 'token', 'session'):
+                    logger.info(f"【{self.cookie_id}】  {key}: [已脱敏] (长度: {len(str(value))})")
                 else:
                     logger.info(f"【{self.cookie_id}】  {key}: {value}")
             logger.info(f"【{self.cookie_id}】")
             logger.info(f"【{self.cookie_id}】--- 请求体 (data) ---")
             logger.info(f"【{self.cookie_id}】  data: {data_val}")
             logger.info(f"【{self.cookie_id}】")
-            logger.info(f"【{self.cookie_id}】--- 签名计算信息 ---")
-            logger.info(f"【{self.cookie_id}】  token (从_m_h5_tk提取): {token[:20]}...{token[-10:] if len(token) > 30 else token} (长度: {len(token)})")
-            logger.info(f"【{self.cookie_id}】  timestamp (t): {params['t']}")
-            logger.info(f"【{self.cookie_id}】  app_key: 34839810")
-            logger.info(f"【{self.cookie_id}】  data_val: {data_val}")
-            logger.info(f"【{self.cookie_id}】  计算签名: MD5({token}&{params['t']}&34839810&{data_val})")
-            logger.info(f"【{self.cookie_id}】  最终签名: {sign}")
-            logger.info(f"【{self.cookie_id}】")
-            logger.info(f"【{self.cookie_id}】--- 请求头 (headers) ---")
+            logger.debug(f"【{self.cookie_id}】--- 签名计算信息 ---")
+            logger.debug(f"【{self.cookie_id}】  token (从_m_h5_tk提取): {token[:20]}...{token[-10:] if len(token) > 30 else token} (长度: {len(token)})")
+            logger.debug(f"【{self.cookie_id}】  timestamp (t): {params['t']}")
+            logger.debug(f"【{self.cookie_id}】  app_key: 34839810")
+            logger.debug(f"【{self.cookie_id}】  data_val: {data_val}")
+            logger.debug(f"【{self.cookie_id}】  计算签名: MD5({token}&{params['t']}&34839810&{data_val})")
+            logger.debug(f"【{self.cookie_id}】  最终签名: {sign}")
+            logger.debug(f"【{self.cookie_id}】")
+            logger.debug(f"【{self.cookie_id}】--- 请求头 (headers) ---")
             for key, value in sorted(headers.items()):
                 if key == 'cookie':
                     # Cookie很长，只显示关键信息
                     cookie_dict = trans_cookies(self.cookies_str)
-                    logger.info(f"【{self.cookie_id}】  {key}: [Cookie字符串，长度: {len(value)}]")
-                    logger.info(f"【{self.cookie_id}】    Cookie字段数: {len(cookie_dict)}")
-                    logger.info(f"【{self.cookie_id}】    关键字段:")
+                    logger.debug(f"【{self.cookie_id}】  {key}: [Cookie字符串，长度: {len(value)}]")
+                    logger.debug(f"【{self.cookie_id}】    Cookie字段数: {len(cookie_dict)}")
+                    logger.debug(f"【{self.cookie_id}】    关键字段:")
                     important_keys = ['unb', '_m_h5_tk', '_m_h5_tk_enc', 'cookie2', 't', 'sgcookie']
                     for k in important_keys:
                         if k in cookie_dict:
                             val = cookie_dict[k]
                             if len(val) > 50:
-                                logger.info(f"【{self.cookie_id}】      {k}: {val[:30]}...{val[-20:]} (长度: {len(val)})")
+                                logger.debug(f"【{self.cookie_id}】      {k}: {val[:30]}...{val[-20:]} (长度: {len(val)})")
                             else:
-                                logger.info(f"【{self.cookie_id}】      {k}: {val}")
+                                logger.debug(f"【{self.cookie_id}】      {k}: {val}")
                 else:
-                    logger.info(f"【{self.cookie_id}】  {key}: {value}")
-            logger.info(f"【{self.cookie_id}】")
-            logger.info(f"【{self.cookie_id}】--- 其他信息 ---")
-            logger.info(f"【{self.cookie_id}】  device_id: {self.device_id}")
-            logger.info(f"【{self.cookie_id}】  myid (unb): {self.myid}")
-            logger.info(f"【{self.cookie_id}】  完整Cookie字符串长度: {len(self.cookies_str)}")
-            logger.info(f"【{self.cookie_id}】==========================================")
+                    logger.debug(f"【{self.cookie_id}】  {key}: {value}")
+            logger.debug(f"【{self.cookie_id}】")
+            logger.debug(f"【{self.cookie_id}】--- 其他信息 ---")
+            logger.debug(f"【{self.cookie_id}】  device_id: {self.device_id}")
+            logger.debug(f"【{self.cookie_id}】  myid (unb): {self.myid}")
+            logger.debug(f"【{self.cookie_id}】  完整Cookie字符串长度: {len(self.cookies_str)}")
+            logger.debug(f"【{self.cookie_id}】==========================================")
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -6076,6 +6090,17 @@ class XianyuLive:
                     self.cookies_str = real_cookies_str
                     logger.info(f"【{target_cookie_id}】已更新当前实例的Cookie信息")
 
+                    # 扫码登录后冷却：闲鱼风控对新登录的 cookie 较敏感
+                    # 立即调用 token API 容易触发 RGV587 滑块验证
+                    # 强制等待 15 秒，让 cookie 在闲鱼服务端"沉淀"
+                    logger.info(f"【{target_cookie_id}】扫码登录冷却中，等待 15 秒后才会调用 Token API，避免触发风控...")
+                    try:
+                        await asyncio.sleep(15)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        pass
+
                 # 更新扫码登录Cookie刷新时间标志
                 self.last_qr_cookie_refresh_time = time.time()
                 logger.info(f"【{target_cookie_id}】已更新扫码登录Cookie刷新时间标志，_refresh_cookies_via_browser将等待{self.qr_cookie_refresh_cooldown//60}分钟后执行")
@@ -6111,10 +6136,11 @@ class XianyuLive:
                 if playwright:
                     try:
                         logger.warning(f"【{target_cookie_id}】正在关闭Playwright...")
-                        await asyncio.wait_for(playwright.stop(), timeout=2.0)
+                        # 增加超时到 8 秒，给 Playwright 足够时间清理进程
+                        await asyncio.wait_for(playwright.stop(), timeout=8.0)
                         logger.warning(f"【{target_cookie_id}】Playwright关闭完成")
                     except asyncio.TimeoutError:
-                        logger.warning(f"【{target_cookie_id}】Playwright关闭超时（2秒），进程可能仍在运行")
+                        logger.warning(f"【{target_cookie_id}】Playwright关闭超时（8秒），进程可能仍在运行")
                         logger.warning(f"【{target_cookie_id}】提示：如果后续Playwright启动失败，可能需要手动清理残留进程")
                         # 尝试清理Playwright的内部状态
                         try:

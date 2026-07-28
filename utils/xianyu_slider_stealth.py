@@ -2161,7 +2161,7 @@ class XianyuSliderStealth:
             
             if found_failure:
                 logger.info(f"【{self.pure_user_id}】检测到验证失败关键词，验证失败")
-                return True
+                return True, None  # 修复：返回元组以保持返回值类型一致
             
             # 检查各种可能的验证失败提示元素
             failure_selectors = [
