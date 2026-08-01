@@ -106,7 +106,7 @@ def _migrate_database_files_early():
                         print(f"{_WARN} 发现旧{description}文件: {old_path}")
                         print(f"  新数据库位于: {new_path}")
                         print(f"  建议备份后删除旧文件")
-                except:
+                except Exception:
                     pass
     
     # 迁移备份文件
@@ -562,7 +562,7 @@ if sys.platform.startswith('linux'):
     except Exception as e:
         logger.debug(f"设置事件循环策略失败: {e}")
 
-from config import AUTO_REPLY, COOKIES_LIST
+from config import AUTO_REPLY, COOKIES_LIST, API_HOST as _ENV_API_HOST, API_PORT as _ENV_API_PORT, COOKIES_STR as _ENV_COOKIES_STR
 import cookie_manager as cm
 from db_manager import db_manager
 from file_log_collector import setup_file_logging
@@ -572,9 +572,9 @@ def _start_api_server():
     """后台线程启动 FastAPI 服务"""
     api_conf = AUTO_REPLY.get('api', {})
 
-    # 优先使用环境变量配置
-    host = os.getenv('API_HOST', '0.0.0.0')  # 默认绑定所有接口
-    port = int(os.getenv('API_PORT', '8080'))  # 默认端口8080
+    # 使用 config.py 集中管理的环境变量默认值
+    host = _ENV_API_HOST
+    port = _ENV_API_PORT
 
     # 如果配置文件中有特定配置，则使用配置文件
     if 'host' in api_conf:
@@ -690,7 +690,7 @@ async def main():
         logger.info(f"从配置文件加载 Cookie: {cid}")
 
     # 3) 若老环境变量仍提供单账号 Cookie，则作为 default 账号
-    env_cookie = os.getenv('COOKIES_STR')
+    env_cookie = _ENV_COOKIES_STR
     if env_cookie and 'default' not in manager.list_cookies():
         manager.add_cookie('default', env_cookie)
         logger.info("从环境变量加载 default Cookie")

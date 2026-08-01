@@ -1,0 +1,21 @@
+{
+  "name": "闲鱼智控 Pro - 自动发货与管家系统",
+  "short_name": "闲鱼智控",
+  "description": "闲鱼自动回复、自动发货、订单管理、AI智能议价一体化解决方案",
+  "start_url": "/static/",
+  "scope": "/static/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F4F5F7",
+  "theme_color": "#FFE815",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "shopping"]
+}

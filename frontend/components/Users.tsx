@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { getAllUsers, deleteUser, changeAdminPassword } from '../services/api';
 import { UserInfo } from '../types';
-import { Trash2, Key, Shield, Loader2, AlertTriangle, X, Save } from 'lucide-react';
+import Modal from './ui/Modal';
+import { Trash2, Key, Shield, Loader2, AlertTriangle, Save } from 'lucide-react';
 
 const Users: React.FC = () => {
   const [users, setUsers] = useState<UserInfo[]>([]);
@@ -169,114 +170,101 @@ const Users: React.FC = () => {
       </div>
 
       {/* Change Password Modal */}
-      {showPasswordModal && (
-        <div className="modal-overlay">
-          <div className="modal-container">
-            <div className="modal-header">
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-2xl font-extrabold text-gray-900">修改管理员密码</h3>
-                <button
-                  onClick={() => setShowPasswordModal(false)}
-                  className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-600" />
-                </button>
-              </div>
-            </div>
-            <div className="modal-body space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">当前密码</label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="输入当前密码"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">新密码</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="至少6位字符"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">确认新密码</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="再次输入新密码"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowPasswordModal(false)}
-                  className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSavePassword}
-                  disabled={savingPassword}
-                  className="flex-1 ios-btn-primary px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-70"
-                >
-                  {savingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  {savingPassword ? '保存中...' : '保存修改'}
-                </button>
-              </div>
-            </div>
+      <Modal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        title="修改管理员密码"
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowPasswordModal(false)}
+              className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSavePassword}
+              disabled={savingPassword}
+              className="flex-1 ios-btn-primary px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-70"
+            >
+              {savingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {savingPassword ? '保存中...' : '保存修改'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">当前密码</label>
+            <input
+              type="password"
+              aria-label="当前密码"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="输入当前密码"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">新密码</label>
+            <input
+              type="password"
+              aria-label="新密码"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="至少6位字符"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">确认新密码</label>
+            <input
+              type="password"
+              aria-label="确认新密码"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="再次输入新密码"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Delete Confirmation Modal */}
-      {deleteTarget && (
-        <div className="modal-overlay">
-          <div className="modal-container">
-            <div className="modal-header">
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-2xl font-extrabold text-gray-900">确认删除用户</h3>
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-600" />
-                </button>
-              </div>
-            </div>
-            <div className="modal-body space-y-5">
-              <div className="flex items-center gap-3 p-4 bg-red-50 rounded-xl">
-                <AlertTriangle className="w-6 h-6 text-red-500" />
-                <div className="text-sm text-red-700">
-                  确定要删除用户 <strong>{deleteTarget.username}</strong> 吗？此操作不可恢复。
-                </div>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setDeleteTarget(null)}
-                  className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex-1 px-6 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
-                >
-                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  {deleting ? '删除中...' : '确认删除'}
-                </button>
-              </div>
+      <Modal
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="确认删除用户"
+        size="sm"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex-1 px-6 py-3 rounded-xl font-bold bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {deleting ? '删除中...' : '确认删除'}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div className="flex items-center gap-3 p-4 bg-red-50 rounded-xl">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <div className="text-sm text-red-700">
+              确定要删除用户 <strong>{deleteTarget?.username}</strong> 吗？此操作不可恢复。
             </div>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

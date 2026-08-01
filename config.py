@@ -1,10 +1,85 @@
 import os
 import yaml
-from typing import Dict, Any
+from typing import Dict, Any, List
+
+
+# ==================== 环境变量集中管理 ====================
+# 所有通过 os.getenv/os.environ.get 读取的应用配置统一在此声明，
+# 避免散落在多个模块造成默认值不一致或重复读取。
+# 运行时探测变量（DOCKER_ENV、PLAYWRIGHT_BROWSERS_PATH、LOCALAPPDATA 等）
+# 属于系统/环境检测，不在此处集中，留在使用处就近读取。
+
+
+def _get_bool(key: str, default: bool) -> bool:
+    """读取布尔型环境变量（接受 true/false/1/0，大小写不敏感）"""
+    v = os.getenv(key)
+    if v is None:
+        return default
+    return v.strip().lower() in ('true', '1', 'yes', 'on')
+
+
+def _get_int(key: str, default: int) -> int:
+    """读取整型环境变量，失败回退默认值"""
+    v = os.getenv(key)
+    if v is None or v.strip() == '':
+        return default
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return default
+
+
+# ---------- 数据库 ----------
+DB_PATH: str = os.getenv('DB_PATH', 'data/xianyu_data.db')
+SQL_LOG_ENABLED: bool = _get_bool('SQL_LOG_ENABLED', True)
+SQL_LOG_LEVEL: str = (os.getenv('SQL_LOG_LEVEL', 'INFO') or 'INFO').upper()
+
+# ---------- API 服务 ----------
+API_HOST: str = os.getenv('API_HOST', '0.0.0.0')
+API_PORT: int = _get_int('API_PORT', 8080)
+# CORS_ORIGINS：逗号分隔的来源列表，或 '*'；空字符串走默认白名单
+CORS_ORIGINS: str = os.getenv('CORS_ORIGINS', '')
+
+# ---------- 闲鱼 Cookie（单账号兜底，多账号走 global_config.yml 或 DB）----------
+COOKIES_STR: str = os.getenv('COOKIES_STR', '')
+
+# ---------- 管理员初始化 ----------
+# 注意：ADMIN_PASSWORD 不设默认值，未配置时初始化脚本应明确告警或失败
+ADMIN_USERNAME: str = (os.getenv('ADMIN_USERNAME', 'admin') or 'admin').strip()
+ADMIN_EMAIL: str = (os.getenv('ADMIN_EMAIL', 'admin@example.com') or 'admin@example.com').strip()
+ADMIN_PASSWORD: str = (os.getenv('ADMIN_PASSWORD') or '').strip()
+
+# ---------- 极验验证码 ----------
+GEETEST_CAPTCHA_ID: str = os.getenv('GEETEST_CAPTCHA_ID', 'a30cdbb466e9349385762477cb2c7df6')
+GEETEST_PRIVATE_KEY: str = os.getenv('GEETEST_PRIVATE_KEY', '6f70322308eb29ae0d85516a14a32d2c')
+GEETEST_USER_ID: str = os.getenv('GEETEST_USER_ID', 'xianyu_system')
+
+
+def parse_cors_origins() -> tuple:
+    """解析 CORS_ORIGINS 字符串为 (origins_list, allow_credentials) 元组。
+
+    - '*' → (['*'], False)
+    - 'a,b,c' → (['a','b','c'], True)
+    - '' → 默认本地开发白名单 + credentials=True
+    """
+    raw = CORS_ORIGINS.strip()
+    if raw == '*':
+        return ['*'], False
+    if raw:
+        return [o.strip() for o in raw.split(',') if o.strip()], True
+    return [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+    ], True
+
 
 class Config:
     """配置管理类
-    
+
     用于加载和管理全局配置文件(global_config.yml)。
     支持配置的读取、修改和保存。
     """

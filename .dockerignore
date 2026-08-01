@@ -1,0 +1,99 @@
+# ===== Git =====
+.git
+.gitignore
+
+# ===== 环境与敏感配置 =====
+.env
+.env.local
+.env.production
+*.env.bak
+secrets.json
+credentials.json
+
+# ===== 数据与日志 =====
+data/
+logs/
+backups/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+*.log
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+
+# ===== 前端构建产物 =====
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+node_modules/
+.npm/
+
+# ===== 构建产物 =====
+# static/ 目录保留：包含 xianyu_js_version_2.js 运行时依赖
+# 前端构建产物会被 Dockerfile 中的 COPY --from=frontend-builder 覆盖
+
+# ===== 备份目录 =====
+frontend_backup/
+*_backup/
+backup_*/
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== 临时文件 =====
+*.tmp
+*.temp
+*.bak
+*.cache
+build.log
+
+# ===== 本地调试脚本 =====
+check_db.py
+fix_password.py
+reset_password.py
+debug_*.py
+test_*.py
+local_*.py
+
+# ===== 容器日志 =====
+容器.log
+
+# ===== Docker 自身 =====
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+.env.example

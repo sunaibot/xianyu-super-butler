@@ -8,12 +8,10 @@ export default defineConfig({
     port: 3000,
     host: '0.0.0.0',
     proxy: {
-      // 代理API请求到后端
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      // 代理其他后端请求
       '/cookies': {
         target: 'http://localhost:8080',
         changeOrigin: true,
@@ -22,19 +20,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/password-login': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
       '/keywords': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
       '/keywords-with-item-id': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/default-reply': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -50,23 +40,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/notification-channels': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/message-notifications': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
       '/ai-reply-settings': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
       '/system-settings': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/user-settings': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -78,14 +56,6 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/backup': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/logs': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
       '/login': {
         target: 'http://localhost:8080',
         changeOrigin: true,
@@ -94,35 +64,11 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/logout': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/register': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/generate-captcha': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/verify-captcha': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/geetest': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/send-verification-code': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/change-password': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
       '/health': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/kb': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -136,12 +82,20 @@ export default defineConfig({
   },
   build: {
     outDir: '../static',
-    sourcemap: true,
+    sourcemap: false, // 生产构建关闭 sourcemap，减小体积、避免源码泄露
     rollupOptions: {
       output: {
-        manualChunks: undefined,
+        // 手动分块：将 react/react-dom 抽 vendor chunk，业务组件按域分组
+        manualChunks: {
+          // React 核心：稳定不变，单独缓存
+          'vendor-react': ['react', 'react-dom'],
+          // 图标库：体积较大，独立分块
+          'vendor-icons': ['lucide-react'],
+        },
       },
     },
     emptyOutDir: false,
+    // 大于 1MB 的资源警告阈值
+    chunkSizeWarningLimit: 1024,
   },
 });

@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { ShippingRule } from '../types';
 import { getShippingRules, updateShippingRule, deleteShippingRule } from '../services/api';
 import { useToast } from './Toast';
-import { Zap, Plus, Trash2, Edit, Save, X, AlertCircle, RefreshCw } from 'lucide-react';
+import { useConfirm } from '../hooks/useConfirm';
+import Modal from './ui/Modal';
+import { Plus, Trash2, Edit, Save, AlertCircle, RefreshCw } from 'lucide-react';
 
 const Rules: React.FC = () => {
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const [shippingRules, setShippingRules] = useState<ShippingRule[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +38,7 @@ const Rules: React.FC = () => {
       showToast('success', rule.enabled ? '规则已禁用' : '规则已启用');
   };
   const handleDeleteShipping = async (id: string) => {
-      if(confirm('确定删除该发货规则吗？')) {
+      if(await confirm({ title: '确认删除发货规则', content: '确定删除该发货规则吗？此操作不可恢复。', variant: 'danger' })) {
           await deleteShippingRule(id);
           refresh();
           showToast('success', '规则已删除');
@@ -140,105 +143,99 @@ const Rules: React.FC = () => {
       </div>
 
       {/* Shipping Rule Modal */}
-      {showShippingModal && (
-        <div className="modal-overlay">
-          <div className="modal-container">
-            <div className="modal-header">
-              <div className="flex items-center justify-between w-full">
-                <h3 className="text-2xl font-extrabold text-gray-900">
-                  {editingShippingRule?.id ? '编辑发货规则' : '新增发货规则'}
-                </h3>
-                <button
-                  onClick={() => setShowShippingModal(false)}
-                  className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
-                >
-                  <X className="w-5 h-5 text-gray-600" />
-                </button>
-              </div>
-            </div>
+      <Modal
+        isOpen={showShippingModal}
+        onClose={() => setShowShippingModal(false)}
+        title={editingShippingRule?.id ? '编辑发货规则' : '新增发货规则'}
+        size="md"
+        footer={
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowShippingModal(false)}
+              className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSaveShippingRule}
+              className="flex-1 ios-btn-primary px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              保存规则
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">规则名称</label>
+            <input
+              type="text"
+              aria-label="规则名称"
+              value={editingShippingRule?.name || ''}
+              onChange={(e) => setEditingShippingRule({ ...editingShippingRule, name: e.target.value })}
+              placeholder="例如：VIP会员发货"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+          </div>
 
-            <div className="modal-body space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">规则名称</label>
-                <input
-                  type="text"
-                  value={editingShippingRule?.name || ''}
-                  onChange={(e) => setEditingShippingRule({ ...editingShippingRule, name: e.target.value })}
-                  placeholder="例如：VIP会员发货"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">商品关键词</label>
+            <input
+              type="text"
+              aria-label="商品关键词"
+              value={editingShippingRule?.item_keyword || ''}
+              onChange={(e) => setEditingShippingRule({ ...editingShippingRule, item_keyword: e.target.value })}
+              placeholder="商品标题中包含的关键词"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">商品关键词</label>
-                <input
-                  type="text"
-                  value={editingShippingRule?.item_keyword || ''}
-                  onChange={(e) => setEditingShippingRule({ ...editingShippingRule, item_keyword: e.target.value })}
-                  placeholder="商品标题中包含的关键词"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">卡密组ID</label>
+            <input
+              type="number"
+              aria-label="卡密组ID"
+              inputMode="numeric"
+              value={editingShippingRule?.card_group_id || 0}
+              onChange={(e) => setEditingShippingRule({ ...editingShippingRule, card_group_id: parseInt(e.target.value) || 0 })}
+              placeholder="输入卡密组ID"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+          </div>
 
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">卡密组ID</label>
-                <input
-                  type="number"
-                  value={editingShippingRule?.card_group_id || 0}
-                  onChange={(e) => setEditingShippingRule({ ...editingShippingRule, card_group_id: parseInt(e.target.value) || 0 })}
-                  placeholder="输入卡密组ID"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-2">优先级</label>
+            <input
+              type="number"
+              aria-label="优先级"
+              inputMode="numeric"
+              value={editingShippingRule?.priority || 1}
+              onChange={(e) => setEditingShippingRule({ ...editingShippingRule, priority: parseInt(e.target.value) || 1 })}
+              min="1"
+              className="w-full ios-input px-4 py-3 rounded-xl"
+            />
+            <p className="text-xs text-gray-500 mt-1">数字越小优先级越高</p>
+          </div>
 
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-2">优先级</label>
-                <input
-                  type="number"
-                  value={editingShippingRule?.priority || 1}
-                  onChange={(e) => setEditingShippingRule({ ...editingShippingRule, priority: parseInt(e.target.value) || 1 })}
-                  min="1"
-                  className="w-full ios-input px-4 py-3 rounded-xl"
-                />
-                <p className="text-xs text-gray-500 mt-1">数字越小优先级越高</p>
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                <span className="font-bold text-gray-900">启用状态</span>
-                <button
-                  type="button"
-                  onClick={() => setEditingShippingRule({ ...editingShippingRule, enabled: !editingShippingRule?.enabled })}
-                  className={`w-14 h-8 rounded-full transition-colors duration-300 relative ${
-                    editingShippingRule?.enabled ? 'bg-[#FFE815]' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 block ${
-                      editingShippingRule?.enabled ? 'translate-x-7' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => setShowShippingModal(false)}
-                  className="flex-1 px-6 py-3 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSaveShippingRule}
-                  className="flex-1 ios-btn-primary px-6 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  保存规则
-                </button>
-              </div>
-            </div>
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+            <span className="font-bold text-gray-900">启用状态</span>
+            <button
+              type="button"
+              onClick={() => setEditingShippingRule({ ...editingShippingRule, enabled: !editingShippingRule?.enabled })}
+              className={`w-14 h-8 rounded-full transition-colors duration-300 relative ${
+                editingShippingRule?.enabled ? 'bg-[#FFE815]' : 'bg-gray-300'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-transform duration-300 block ${
+                  editingShippingRule?.enabled ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };

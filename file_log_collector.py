@@ -116,7 +116,7 @@ class FileLogCollector:
                 # 转换时间格式
                 try:
                     timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
-                except:
+                except Exception:
                     timestamp = datetime.now()
                 
                 log_entry = {

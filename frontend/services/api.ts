@@ -2,7 +2,9 @@ import { get, post, put, del } from '../request';
 import {
   LoginResponse, AccountDetail, Order, PaginatedResponse,
   AdminStats, Card, SystemSettings, ApiResponse, OrderAnalytics,
-  Item, AIReplySettings, ShippingRule, ReplyRule, DefaultReply, UserInfo
+  Item, AIReplySettings, ShippingRule, ReplyRule, DefaultReply, UserInfo,
+  ForbiddenCheckResult, ProductExtractionResult, ProductPublishResult,
+  ProductDedupResult, PerformanceStats
 } from '../types';
 
 // Auth
@@ -12,14 +14,6 @@ export const login = async (data: { username?: string; password?: string; email?
 
 export const verifySession = async (): Promise<{ authenticated: boolean; initialized?: boolean; user_id?: number; username?: string; is_admin?: boolean }> => {
   return get('/verify');
-};
-
-export const logout = async (): Promise<ApiResponse> => {
-  return post('/logout', {});
-};
-
-export const changePassword = async (currentPassword: string, newPassword: string): Promise<ApiResponse> => {
-  return post('/change-password', { current_password: currentPassword, new_password: newPassword });
 };
 
 // Accounts
@@ -43,35 +37,47 @@ export const getAccountDetails = async (): Promise<AccountDetail[]> => {
   }));
 };
 
+export const getAccountForEdit = async (id: string): Promise<Partial<AccountDetail> & { id: string; value?: string }> => {
+  return get(`/cookie/${id}/details?include_value=true`);
+};
+
 export const generateQRLogin = async (): Promise<{ success: boolean; session_id?: string; qr_code_url?: string }> => {
   return post('/qr-login/generate');
 };
 
-export const checkQRLoginStatus = async (sessionId: string): Promise<any> => {
+export interface QRLoginStatusResult {
+  success: boolean;
+  // 后端可能返回的状态：pending/processing/success/already_processed/expired/cancelled/verification_required/error/failed
+  status: 'pending' | 'processing' | 'success' | 'already_processed' | 'expired' | 'cancelled' | 'verification_required' | 'error' | 'failed';
+  cookie_id?: string;
+  message?: string;
+}
+
+export const checkQRLoginStatus = async (sessionId: string): Promise<QRLoginStatusResult> => {
   return get(`/qr-login/check/${sessionId}`);
 };
 
-export const updateAccountStatus = async (id: string, enabled: boolean): Promise<any> => {
+export const updateAccountStatus = async (id: string, enabled: boolean): Promise<ApiResponse> => {
   return put(`/cookies/${id}/status`, { enabled });
 };
 
-export const deleteAccount = async (id: string): Promise<any> => {
+export const deleteAccount = async (id: string): Promise<ApiResponse> => {
   return del(`/cookies/${id}`);
 };
 
-export const updateAccountRemark = async (id: string, remark: string): Promise<any> => {
+export const updateAccountRemark = async (id: string, remark: string): Promise<ApiResponse> => {
   return put(`/cookies/${id}/remark`, { remark });
 };
 
-export const updateAccountAutoConfirm = async (id: string, autoConfirm: boolean): Promise<any> => {
+export const updateAccountAutoConfirm = async (id: string, autoConfirm: boolean): Promise<ApiResponse> => {
   return put(`/cookies/${id}/auto-confirm`, { auto_confirm: autoConfirm });
 };
 
-export const updateAccountPauseDuration = async (id: string, pauseDuration: number): Promise<any> => {
+export const updateAccountPauseDuration = async (id: string, pauseDuration: number): Promise<ApiResponse> => {
   return put(`/cookies/${id}/pause-duration`, { pause_duration: pauseDuration });
 };
 
-export const updateAccountCookie = async (id: string, value: string): Promise<any> => {
+export const updateAccountCookie = async (id: string, value: string): Promise<ApiResponse> => {
   return put(`/cookies/${id}`, { id, value });
 };
 
@@ -79,12 +85,83 @@ export const updateAccountLoginInfo = async (id: string, data: {
   username?: string;
   login_password?: string;
   show_browser?: boolean;
-}): Promise<any> => {
+}): Promise<ApiResponse> => {
   return put(`/cookies/${id}/login-info`, data);
 };
 
 export const getAllAISettings = async (): Promise<Record<string, AIReplySettings>> => {
   return get('/ai-reply-settings');
+};
+
+// Knowledge Base
+export interface KBScript {
+  id: number;
+  user_question: string;
+  answer: string;
+  intent_l1?: string;
+  intent_l2?: string;
+  created_at?: string;
+}
+
+export interface KBScriptsResponse {
+  // 后端 /kb/scripts 返回 scripts + total + page + page_size（无 success/total_pages）
+  scripts: KBScript[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages?: number; // 后端未返回，前端按 total/page_size 计算
+}
+
+export interface KBStatus {
+  total_scripts: number;
+  search_mode?: string;
+}
+
+export interface KBSearchResult {
+  results: Array<{
+    id: number;
+    document: string;
+    similarity: number;
+    metadata: {
+      answer: string;
+      intent_l1?: string;
+      intent_l2?: string;
+    };
+  }>;
+}
+
+export const getKBScripts = async (page: number = 1, pageSize: number = 20, search: string = ''): Promise<KBScriptsResponse> => {
+  const params: Record<string, string | number | boolean> = { page, page_size: pageSize };
+  if (search) params.search = search;
+  return get('/kb/scripts', params);
+};
+
+export const createKBScript = async (data: { user_question: string; answer: string; intent_l1?: string; intent_l2?: string }): Promise<{ id: number } & ApiResponse> => {
+  return post('/kb/scripts', data);
+};
+
+export const updateKBScript = async (id: number, data: { user_question: string; answer: string; intent_l1?: string; intent_l2?: string }): Promise<ApiResponse> => {
+  return put(`/kb/scripts/${id}`, data);
+};
+
+export const deleteKBScript = async (id: number): Promise<ApiResponse> => {
+  return del(`/kb/scripts/${id}`);
+};
+
+export const rebuildKBIndex = async (): Promise<ApiResponse> => {
+  return post('/kb/rebuild', {});
+};
+
+export const getKBStatus = async (): Promise<KBStatus> => {
+  return get('/kb/status');
+};
+
+export const searchKB = async (query: string, nResults: number = 3): Promise<KBSearchResult> => {
+  return post('/kb/search', { query, n_results: nResults });
+};
+
+export const importKBCSV = async (csvContent: string): Promise<{ imported: number } & ApiResponse> => {
+  return post('/kb/import', { csv_content: csvContent });
 };
 
 // Orders
@@ -95,30 +172,23 @@ export const getOrders = async (
   pageSize: number = 20,
   search?: string
 ): Promise<PaginatedResponse<Order>> => {
-  const params: any = { page, page_size: pageSize };
+  const params: Record<string, string | number | boolean> = { page, page_size: pageSize };
   if (cookieId) params.cookie_id = cookieId;
   if (status && status !== 'all') params.status = status;
   if (search) params.search = search;
 
-  const res = await get<any>('/api/orders', params);
+  const res = await get<PaginatedResponse<Order>>('/api/orders', params);
 
   // Handle backend response variations
-  const orders = res.orders || res.data || [];
+  // 后端统一返回 PaginatedResponse 结构（data/total/page/page_size/total_pages）
+  const orders = res.data || [];
   return {
     success: true,
     data: orders,
-    total: res.total || orders.length,
-    page: res.page || page,
-    page_size: res.page_size || pageSize,
-    total_pages: res.total_pages || 1
-  };
-};
-
-export const getOrderDetail = async (orderId: string): Promise<{ success: boolean; data?: Order }> => {
-  const result = await get<{ order?: Order; data?: Order }>(`/api/orders/${orderId}`);
-  return {
-    success: true,
-    data: result.order || result.data
+    total: res.total ?? orders.length,
+    page: res.page ?? page,
+    page_size: res.page_size ?? pageSize,
+    total_pages: res.total_pages ?? 1
   };
 };
 
@@ -130,7 +200,7 @@ export const deleteOrder = async (orderId: string): Promise<ApiResponse> => {
   return del(`/api/orders/${orderId}`);
 };
 
-export const syncOrders = async (cookieId?: string, status?: string): Promise<any> => {
+export const syncOrders = async (cookieId?: string, status?: string): Promise<{ success: boolean; synced?: number; message?: string }> => {
   const formData = new FormData();
   if (cookieId) formData.append('cookie_id', cookieId);
   if (status) formData.append('status', status);
@@ -144,11 +214,23 @@ export const syncOrders = async (cookieId?: string, status?: string): Promise<an
   return response.json();
 };
 
-export const syncSingleOrder = async (orderId: string): Promise<any> => {
+export const syncSingleOrder = async (orderId: string): Promise<{ success: boolean; order?: Order; message?: string }> => {
   return post(`/api/orders/${orderId}/refresh`);
 };
 
-export const manualShipOrder = async (orderIds: string[], shipMode: 'status_only' | 'full_delivery', content?: string): Promise<any> => {
+export interface ManualShipResult {
+  order_id: string;
+  success: boolean;
+  message: string;
+}
+
+export const manualShipOrder = async (orderIds: string[], shipMode: 'status_only' | 'full_delivery', content?: string): Promise<{
+  success: boolean;
+  message: string;
+  success_count: number;
+  failed_count: number;
+  results: ManualShipResult[];
+}> => {
     return post('/api/orders/manual-ship', {
         order_ids: orderIds,
         ship_mode: shipMode,
@@ -156,7 +238,19 @@ export const manualShipOrder = async (orderIds: string[], shipMode: 'status_only
     });
 }
 
-export const importOrders = async (data: Partial<Order>[] | FormData): Promise<any> => {
+export interface ImportOrderResult {
+  order_id: string;
+  success: boolean;
+  message: string;
+}
+
+export const importOrders = async (data: Partial<Order>[] | FormData): Promise<{
+  success: boolean;
+  message: string;
+  success_count: number;
+  failed_count: number;
+  results: ImportOrderResult[];
+}> => {
   const isFormData = data instanceof FormData;
   const response = await fetch('/api/orders/import', {
     method: 'POST',
@@ -171,7 +265,7 @@ export const importOrders = async (data: Partial<Order>[] | FormData): Promise<a
 
 // Stats
 export const getAdminStats = async (): Promise<AdminStats> => {
-  return get('/admin/stats');
+  return get('/api/stats');
 };
 
 export const getOrderAnalytics = async (daysOrParams: number | {start_date: string; end_date: string} = 7): Promise<OrderAnalytics> => {
@@ -193,7 +287,7 @@ export const getOrderAnalytics = async (daysOrParams: number | {start_date: stri
 }
 
 export const getValidOrders = async (dateRange: {start_date: string; end_date: string}): Promise<Order[]> => {
-    const res = await get<any>('/analytics/orders/valid', {
+    const res = await get<{ orders?: Order[] } & ApiResponse>('/analytics/orders/valid', {
         start_date: dateRange.start_date,
         end_date: dateRange.end_date
     });
@@ -202,7 +296,7 @@ export const getValidOrders = async (dateRange: {start_date: string; end_date: s
 
 // Cards
 export const getCards = async (): Promise<Card[]> => {
-  const res = await get<any>('/cards');
+  const res = await get<Card[] | { cards?: Card[] }>('/cards');
   return Array.isArray(res) ? res : (res.cards || []);
 };
 
@@ -210,46 +304,60 @@ export const createCard = async (data: Partial<Card>): Promise<{ id: number; mes
   return post('/cards', data);
 };
 
-export const updateCard = async (cardId: string, data: Partial<Card>): Promise<ApiResponse> => {
+export const updateCard = async (cardId: number, data: Partial<Card>): Promise<ApiResponse> => {
   return put(`/cards/${cardId}`, data);
 };
 
-export const deleteCard = async (cardId: string): Promise<ApiResponse> => {
+export const deleteCard = async (cardId: number): Promise<ApiResponse> => {
   return del(`/cards/${cardId}`);
-};
-
-export const getCardDetails = async (cardId: string): Promise<any> => {
-  return get(`/cards/${cardId}/details`);
 };
 
 // Items
 export const getItems = async (): Promise<Item[]> => {
-    const res = await get<any>('/items');
+    const res = await get<Item[] | { items?: Item[] }>('/items');
     return Array.isArray(res) ? res : (res.items || []);
 }
 
-export const syncItemsFromAccount = async (cookieId: string): Promise<any> => {
+export const syncItemsFromAccount = async (cookieId: string): Promise<{ success: boolean; synced?: number; message?: string }> => {
     return post('/items/get-all-from-account', { cookie_id: cookieId });
 }
 
-export const deleteItem = async (cookieId: string, itemId: string): Promise<any> => {
+export const deleteItem = async (cookieId: string, itemId: string): Promise<ApiResponse> => {
     return del(`/items/${cookieId}/${itemId}`);
 }
 
-export const createItem = async (cookieId: string, data: any): Promise<any> => {
+export const createItem = async (cookieId: string, data: Partial<Item>): Promise<ApiResponse> => {
     return post(`/items/${cookieId}`, data);
 }
 
-export const updateItem = async (cookieId: string, itemId: string, data: any): Promise<any> => {
+export const updateItem = async (cookieId: string, itemId: string, data: Partial<Item>): Promise<ApiResponse> => {
     return put(`/items/${cookieId}/${itemId}`, data);
 }
 
+export const updateItemMultiSpec = async (cookieId: string, itemId: string, isMultiSpec: boolean): Promise<ApiResponse> => {
+    return put(`/items/${cookieId}/${itemId}/multi-spec`, { is_multi_spec: isMultiSpec });
+}
+
+export const updateItemMultiQty = async (cookieId: string, itemId: string, isMultiQty: boolean): Promise<ApiResponse> => {
+    return put(`/items/${cookieId}/${itemId}/multi-quantity-delivery`, { multi_quantity_delivery: isMultiQty });
+}
+
 // Rules - 发货规则 (使用正确的后端API)
+interface BackendShippingRule {
+    id: number | string;
+    keyword?: string;
+    description?: string;
+    card_id?: number;
+    card_name?: string;
+    delivery_count?: number;
+    enabled?: boolean;
+}
+
 export const getShippingRules = async (): Promise<ShippingRule[]> => {
-    const res = await get<any>('/delivery-rules');
+    const res = await get<BackendShippingRule[] | { data?: BackendShippingRule[]; rules?: BackendShippingRule[] }>('/delivery-rules');
     const rules = Array.isArray(res) ? res : (res.data || res.rules || []);
     // 转换后端数据格式到前端格式
-    return rules.map((item: any) => ({
+    return rules.map((item: BackendShippingRule) => ({
         id: String(item.id),
         name: item.description || item.keyword || '',
         item_keyword: item.keyword || '',
@@ -260,7 +368,7 @@ export const getShippingRules = async (): Promise<ShippingRule[]> => {
     }));
 }
 
-export const updateShippingRule = async (rule: Partial<ShippingRule>): Promise<any> => {
+export const updateShippingRule = async (rule: Partial<ShippingRule>): Promise<ApiResponse> => {
     const payload = {
         keyword: rule.item_keyword,
         card_id: rule.card_group_id,
@@ -271,14 +379,20 @@ export const updateShippingRule = async (rule: Partial<ShippingRule>): Promise<a
     return rule.id ? put(`/delivery-rules/${rule.id}`, payload) : post('/delivery-rules', payload);
 }
 
-export const deleteShippingRule = async (id: string): Promise<any> => del(`/delivery-rules/${id}`);
+export const deleteShippingRule = async (id: string): Promise<ApiResponse> => del(`/delivery-rules/${id}`);
 
 // Rules - 关键词回复规则 (使用关键词API)
+interface BackendKeyword {
+    keyword: string;
+    reply: string;
+    item_id?: string;
+}
+
 export const getReplyRules = async (cookieId?: string): Promise<ReplyRule[]> => {
     if (!cookieId) return [];
-    const res = await get<any>(`/keywords-with-item-id/${cookieId}`);
+    const res = await get<BackendKeyword[] | { data?: BackendKeyword[] }>(`/keywords-with-item-id/${cookieId}`);
     const keywords = Array.isArray(res) ? res : [];
-    return keywords.map((item: any, index: number) => ({
+    return keywords.map((item: BackendKeyword, index: number) => ({
         id: String(index),
         keyword: item.keyword || '',
         reply_content: item.reply || '',
@@ -287,9 +401,9 @@ export const getReplyRules = async (cookieId?: string): Promise<ReplyRule[]> => 
     }));
 }
 
-export const updateReplyRule = async (rule: Partial<ReplyRule>, cookieId: string): Promise<any> => {
+export const updateReplyRule = async (rule: Partial<ReplyRule>, cookieId: string): Promise<ApiResponse> => {
     // 获取现有关键词
-    const existing = await get<any>(`/keywords-with-item-id/${cookieId}`);
+    const existing = await get<BackendKeyword[]>(`/keywords-with-item-id/${cookieId}`);
     const keywords = Array.isArray(existing) ? existing : [];
 
     // 更新或添加关键词
@@ -297,15 +411,15 @@ export const updateReplyRule = async (rule: Partial<ReplyRule>, cookieId: string
         const index = parseInt(rule.id);
         if (index >= 0 && index < keywords.length) {
             keywords[index] = {
-                keyword: rule.keyword,
-                reply: rule.reply_content,
+                keyword: rule.keyword || '',
+                reply: rule.reply_content || '',
                 item_id: ''
             };
         }
     } else {
         keywords.push({
-            keyword: rule.keyword,
-            reply: rule.reply_content,
+            keyword: rule.keyword || '',
+            reply: rule.reply_content || '',
             item_id: ''
         });
     }
@@ -313,8 +427,8 @@ export const updateReplyRule = async (rule: Partial<ReplyRule>, cookieId: string
     return post(`/keywords-with-item-id/${cookieId}`, { keywords });
 }
 
-export const deleteReplyRule = async (id: string, cookieId: string): Promise<any> => {
-    const existing = await get<any>(`/keywords-with-item-id/${cookieId}`);
+export const deleteReplyRule = async (id: string, cookieId: string): Promise<ApiResponse> => {
+    const existing = await get<BackendKeyword[]>(`/keywords-with-item-id/${cookieId}`);
     const keywords = Array.isArray(existing) ? existing : [];
     const index = parseInt(id);
     if (index >= 0 && index < keywords.length) {
@@ -370,86 +484,13 @@ export const testAIConnection = async (cookieId: string): Promise<ApiResponse> =
   return { success: result.success ?? true, message: result.message || 'AI 连接测试成功' };
 }
 
-// Notification Channels
-export const getNotificationChannels = async (): Promise<{ success: boolean; data?: any[] }> => {
-  const result = await get<any[]>('/notification-channels');
-  const channels = (result || []).map((item: any) => {
-    let parsedConfig;
-    try {
-      parsedConfig = JSON.parse(item.config);
-    } catch {
-      parsedConfig = undefined;
-    }
-    return {
-      id: String(item.id),
-      name: item.name,
-      type: item.type,
-      config: parsedConfig,
-      enabled: item.enabled,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-    };
-  });
-  return { success: true, data: channels };
-}
-
-export const createNotificationChannel = async (data: { name: string; type: string; config: Record<string, unknown> }): Promise<ApiResponse> => {
-  return post('/notification-channels', {
-    ...data,
-    config: JSON.stringify(data.config)
-  });
-}
-
-export const updateNotificationChannel = async (channelId: string, data: { name?: string; config?: Record<string, unknown>; enabled?: boolean }): Promise<ApiResponse> => {
-  const payload: Record<string, unknown> = { ...data };
-  if ('config' in data) {
-    payload.config = JSON.stringify(data.config);
-  }
-  return put(`/notification-channels/${channelId}`, payload);
-}
-
-export const deleteNotificationChannel = async (channelId: string): Promise<ApiResponse> => {
-  return del(`/notification-channels/${channelId}`);
-}
-
-// Message Notifications
-export const getMessageNotifications = async (): Promise<{ success: boolean; data?: any[] }> => {
-  const result = await get<Record<string, any[]>>('/message-notifications');
-  const notifications = [];
-  for (const [cookieId, channelList] of Object.entries(result || {})) {
-    if (Array.isArray(channelList)) {
-      for (const item of channelList) {
-        notifications.push({
-          cookie_id: cookieId,
-          channel_id: item.channel_id,
-          channel_name: item.channel_name,
-          enabled: item.enabled,
-        });
-      }
-    }
-  }
-  return { success: true, data: notifications };
-}
-
-export const setMessageNotification = async (cookieId: string, channelId: number, enabled: boolean): Promise<ApiResponse> => {
-  return post(`/message-notifications/${cookieId}`, { channel_id: channelId, enabled });
-}
-
-export const deleteMessageNotification = async (notificationId: string): Promise<ApiResponse> => {
-  return del(`/message-notifications/${notificationId}`);
-}
-
-export const deleteAccountNotifications = async (cookieId: string): Promise<ApiResponse> => {
-  return del(`/message-notifications/account/${cookieId}`);
-}
-
 // Default Reply
 export const getDefaultReplies = async (): Promise<Record<string, DefaultReply>> => {
   return get('/api/default-replies');
 };
 
 export const getDefaultReply = async (cookieId: string): Promise<DefaultReply> => {
-  const result = await get<any>(`/api/default-reply/${cookieId}`);
+  const result = await get<Partial<DefaultReply>>(`/api/default-reply/${cookieId}`);
   return {
     cookie_id: cookieId,
     enabled: result.enabled || false,
@@ -478,7 +519,7 @@ export const clearDefaultReplyRecords = async (cookieId: string): Promise<ApiRes
 
 // User Management (Admin only)
 export const getAllUsers = async (): Promise<UserInfo[]> => {
-  const res = await get<any>('/admin/users');
+  const res = await get<UserInfo[] | { users?: UserInfo[]; data?: UserInfo[] }>('/admin/users');
   return Array.isArray(res) ? res : (res.users || res.data || []);
 };
 
@@ -488,4 +529,47 @@ export const deleteUser = async (userId: number): Promise<ApiResponse> => {
 
 export const changeAdminPassword = async (currentPassword: string, newPassword: string): Promise<ApiResponse> => {
   return post('/change-admin-password', { current_password: currentPassword, new_password: newPassword });
+};
+
+// Services - Forbidden Words
+export const checkForbiddenWords = async (text: string): Promise<ForbiddenCheckResult> => {
+  return post('/api/services/forbidden-check', { text });
+};
+
+export const cleanForbiddenWords = async (text: string): Promise<ForbiddenCheckResult> => {
+  return post('/api/services/forbidden-clean', { text });
+};
+
+// Services - Product Extraction
+export const extractProduct = async (productUrl: string): Promise<ProductExtractionResult> => {
+  return post('/api/services/extract-product', { product_url: productUrl });
+};
+
+// Services - Product Publishing
+export const publishProduct = async (data: {
+  title: string;
+  price: string;
+  description?: string;
+  images?: string[];
+  category?: string;
+}): Promise<ProductPublishResult> => {
+  return post('/api/services/publish-product', data);
+};
+
+// Services - Product Dedup
+export const dedupProducts = async (data: {
+  item_urls?: string[];
+  item_titles?: string[];
+  item_descriptions?: string[];
+}): Promise<ProductDedupResult> => {
+  return post('/api/services/product-dedup', data);
+};
+
+// Services - Performance Monitor
+export const getPerformanceStats = async (): Promise<PerformanceStats> => {
+  return get('/api/services/performance-stats');
+};
+
+export const resetPerformanceStats = async (): Promise<ApiResponse> => {
+  return post('/api/services/performance-reset', {});
 };

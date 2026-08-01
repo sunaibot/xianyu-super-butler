@@ -30,6 +30,30 @@ try:
 except ImportError:
     _EVENT_BUS_AVAILABLE = False
 
+try:
+    from log_sanitizer import sanitize_cookie_string as _sanitize_cookie
+    _LOG_SANITIZER_AVAILABLE = True
+except ImportError:
+    _LOG_SANITIZER_AVAILABLE = False
+
+try:
+    from notify import Notifier
+    _NOTIFIER_AVAILABLE = True
+except ImportError:
+    _NOTIFIER_AVAILABLE = False
+
+
+def _safe_cookie_summary(cookie_str: str, label: str = "Cookie") -> str:
+    """统一的 Cookie 日志摘要工具：脱敏或仅返回长度，避免明文泄露。"""
+    if not cookie_str:
+        return f"{label}: (空)"
+    if _LOG_SANITIZER_AVAILABLE:
+        try:
+            return f"{label}脱敏: {_sanitize_cookie(cookie_str)}"
+        except Exception:
+            pass
+    return f"{label}已更新 (长度:{len(cookie_str)})"
+
 
 def _notify_event(event_type: str, data: dict = None):
     """向事件总线推送事件（安全调用，不抛异常）"""
@@ -207,10 +231,10 @@ class XianyuLive:
         """安全地将异常转换为字符串"""
         try:
             return str(e)
-        except:
+        except Exception:
             try:
                 return repr(e)
-            except:
+            except Exception:
                 return "未知错误"
 
     def _set_connection_state(self, new_state: ConnectionState, reason: str = ""):
@@ -715,6 +739,8 @@ class XianyuLive:
         self.notification_cooldown = 300  # 5分钟内不重复发送相同类型的通知
         self.token_refresh_notification_cooldown = 18000  # Token刷新异常通知冷却时间：3小时
         self.notification_lock = asyncio.Lock()  # 通知防重复机制的异步锁
+        # 通知分发器：复用 notify/channels 中的渠道实现，避免本类内重复 7 个 _send_*_notification 方法
+        self.notifier = Notifier() if _NOTIFIER_AVAILABLE else None
 
         # 自动发货防重复机制
         self.last_delivery_time = {}  # 记录每个商品的最后发货时间
@@ -1880,10 +1906,10 @@ class XianyuLive:
                         logger.info(f"【{self.cookie_id}】滑块验证成功后，数据库cookies已自动更新")
 
                             
-                        # 记录成功更新到日志文件，包含x5相关的cookie信息
-                        x5sec_cookies_str = "; ".join([f"{k}={v}" for k, v in x5sec_cookies.items()]) if x5sec_cookies else "无"
+                        # 记录成功更新到日志文件，仅显示x5字段数量与长度，不输出明文值
+                        x5sec_keys_summary = ",".join(list(x5sec_cookies.keys())) if x5sec_cookies else "无"
                         log_captcha_event(self.cookie_id, "滑块验证成功并自动更新数据库", True,
-                            f"cookies长度: {len(cookies_str)}, 新增{new_cookie_count}个x5, 更新{updated_cookie_count}个x5, 总计{len(updated_cookies)}个cookie项, x5 cookies: {x5sec_cookies_str}")
+                            f"cookies长度: {len(cookies_str)}, 新增{new_cookie_count}个x5, 更新{updated_cookie_count}个x5, 总计{len(updated_cookies)}个cookie项, x5字段: {x5sec_keys_summary}")
 
                         # 发送成功通知
                         await self.send_token_refresh_notification(
@@ -1898,10 +1924,10 @@ class XianyuLive:
                         self.cookies_str = old_cookies_str
                         self.cookies = old_cookies_dict
 
-                        # 记录更新失败到日志文件，包含获取到的x5 cookies
-                        x5sec_cookies_str = "; ".join([f"{k}={v}" for k, v in x5sec_cookies.items()]) if x5sec_cookies else "无"
+                        # 记录更新失败到日志文件，仅显示x5字段名，不输出明文值
+                        x5sec_keys_summary = ",".join(list(x5sec_cookies.keys())) if x5sec_cookies else "无"
                         log_captcha_event(self.cookie_id, "滑块验证成功但数据库更新失败", False,
-                            f"更新异常: {self._safe_str(update_e)[:100]}, 获取到的x5 cookies: {x5sec_cookies_str}")
+                            f"更新异常: {self._safe_str(update_e)[:100]}, 获取到的x5字段: {x5sec_keys_summary}")
 
                         # 发送更新失败通知
                         await self.send_token_refresh_notification(
@@ -2252,7 +2278,7 @@ class XianyuLive:
                 
                 # 将cookie字典转换为字符串格式
                 new_cookies_str = '; '.join([f"{k}={v}" for k, v in result.items()])
-                logger.info(f"【{self.cookie_id}】Cookie字符串格式: {new_cookies_str[:200]}..." if len(new_cookies_str) > 200 else f"【{self.cookie_id}】Cookie字符串格式: {new_cookies_str}")
+                logger.info(f"【{self.cookie_id}】{_safe_cookie_summary(new_cookies_str, 'Cookie字符串格式')}")
                 
                 # 记录密码登录时间，防止重复登录
                 XianyuLive._last_password_login_time[self.cookie_id] = time.time()
@@ -2437,7 +2463,7 @@ class XianyuLive:
                     try:
                         os.remove(test_image_path)
                         logger.debug(f"【{self.cookie_id}】已删除测试图片")
-                    except:
+                    except Exception:
                         pass
                         
         except Exception as e:
@@ -2860,6 +2886,13 @@ class XianyuLive:
                 existing_item = db_manager.get_item_info(self.cookie_id, item_id)
                 has_detail = existing_item and existing_item.get('item_detail') and existing_item['item_detail'].strip()
 
+                # 提取商品图片URL（从 pic_info.picUrl）
+                pic_info = item.get('pic_info', {}) or {}
+                item_image_url = pic_info.get('picUrl', '') if isinstance(pic_info, dict) else ''
+                # alicdn 支持 https，统一升级避免混合内容拦截
+                if item_image_url and item_image_url.startswith('http://'):
+                    item_image_url = 'https://' + item_image_url[len('http://'):]
+
                 batch_data.append({
                     'cookie_id': self.cookie_id,
                     'item_id': item_id,
@@ -2867,7 +2900,8 @@ class XianyuLive:
                     'item_description': '',  # 暂时为空
                     'item_category': str(item.get('category_id', '')),
                     'item_price': item.get('price_text', ''),
-                    'item_detail': json.dumps(item_detail, ensure_ascii=False)
+                    'item_detail': json.dumps(item_detail, ensure_ascii=False),
+                    'item_image': item_image_url
                 })
 
                 # 如果没有详情，添加到需要获取详情的列表
@@ -3554,14 +3588,12 @@ class XianyuLive:
             # 移除非数字字符，保留小数点
             price_clean = re.sub(r'[^\d.]', '', str(price_str))
             return float(price_clean) if price_clean else 0.0
-        except:
+        except Exception:
             return 0.0
 
     async def send_notification(self, send_user_name: str, send_user_id: str, send_message: str, item_id: str = None, chat_id: str = None):
-        """发送消息通知"""
+        """发送消息通知（防重复 + 冷却由本类管理，渠道分发委托 Notifier）"""
         try:
-            from db_manager import db_manager
-            import aiohttp
             import hashlib
 
             # 过滤系统默认消息，不发送通知
@@ -3578,7 +3610,7 @@ class XianyuLive:
             # 用于防重复发送
             notification_key = f"{chat_id or 'unknown'}_{send_user_id}_{send_message}"
             notification_hash = hashlib.md5(notification_key.encode('utf-8')).hexdigest()
-            
+
             # 使用异步锁保护防重复检查，确保并发安全
             async with self.notification_lock:
                 # 检查是否在冷却时间内已发送过相同的通知
@@ -3589,10 +3621,10 @@ class XianyuLive:
                         remaining_seconds = int(self.notification_cooldown - time_since_last)
                         logger.warning(f"📱 通知在冷却期内（剩余 {remaining_seconds} 秒），跳过重复发送 - 账号: {self.cookie_id}, 买家: {send_user_name}, 消息: {send_message[:30]}...")
                         return
-                
+
                 # 更新通知发送时间
                 self.last_notification_time[notification_hash] = current_time
-                
+
                 # 清理过期的通知记录（超过1小时的记录）
                 expired_keys = [
                     key for key, timestamp in self.last_notification_time.items()
@@ -3603,15 +3635,6 @@ class XianyuLive:
 
             logger.info(f"📱 开始发送消息通知 - 账号: {self.cookie_id}, 买家: {send_user_name}")
 
-            # 获取当前账号的通知配置
-            notifications = db_manager.get_account_notifications(self.cookie_id)
-
-            if not notifications:
-                logger.warning(f"📱 账号 {self.cookie_id} 未配置消息通知，跳过通知发送")
-                return
-
-            logger.info(f"📱 找到 {len(notifications)} 个通知渠道配置")
-
             # 构建通知消息
             notification_msg = f"🚨 接收消息通知\n\n" \
                              f"账号: {self.cookie_id}\n" \
@@ -3621,523 +3644,45 @@ class XianyuLive:
                              f"消息内容: {send_message}\n" \
                              f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
-            # 发送通知到各个渠道
-            for i, notification in enumerate(notifications, 1):
-                logger.info(f"📱 处理第 {i} 个通知渠道: {notification.get('channel_name', 'Unknown')}")
-
-                if not notification.get('enabled', True):
-                    logger.warning(f"📱 通知渠道 {notification.get('channel_name')} 已禁用，跳过")
-                    continue
-
-                channel_type = notification.get('channel_type')
-                channel_config = notification.get('channel_config')
-
-                logger.info(f"📱 渠道类型: {channel_type}, 配置: {channel_config}")
-
-                try:
-                    # 解析配置数据
-                    config_data = self._parse_notification_config(channel_config)
-                    logger.info(f"📱 解析后的配置数据: {config_data}")
-
-                    match channel_type:
-                        case 'ding_talk' | 'dingtalk':
-                            logger.info(f"📱 开始发送钉钉通知...")
-                            await self._send_dingtalk_notification(config_data, notification_msg)
-                        case 'feishu' | 'lark':
-                            logger.info(f"📱 开始发送飞书通知...")
-                            await self._send_feishu_notification(config_data, notification_msg)
-                        case 'bark':
-                            logger.info(f"📱 开始发送Bark通知...")
-                            await self._send_bark_notification(config_data, notification_msg)
-                        case 'email':
-                            logger.info(f"📱 开始发送邮件通知...")
-                            await self._send_email_notification(config_data, notification_msg)
-                        case 'webhook':
-                            logger.info(f"📱 开始发送Webhook通知...")
-                            await self._send_webhook_notification(config_data, notification_msg)
-                        case 'wechat':
-                            logger.info(f"📱 开始发送微信通知...")
-                            await self._send_wechat_notification(config_data, notification_msg)
-                        case 'telegram':
-                            logger.info(f"📱 开始发送Telegram通知...")
-                            await self._send_telegram_notification(config_data, notification_msg)
-                        case _:
-                            logger.warning(f"📱 不支持的通知渠道类型: {channel_type}")
-
-                except Exception as notify_error:
-                    logger.error(f"📱 发送通知失败 ({notification.get('channel_name', 'Unknown')}): {self._safe_str(notify_error)}")
-                    import traceback
-                    logger.error(f"📱 详细错误信息: {traceback.format_exc()}")
+            await self._dispatch_notifications(notification_msg)
 
         except Exception as e:
             logger.error(f"📱 处理消息通知失败: {self._safe_str(e)}")
             import traceback
             logger.error(f"📱 详细错误信息: {traceback.format_exc()}")
 
-    def _parse_notification_config(self, config: str) -> dict:
-        """解析通知配置数据"""
-        try:
-            import json
-            # 尝试解析JSON格式的配置
-            return json.loads(config)
-        except (json.JSONDecodeError, TypeError):
-            # 兼容旧格式（直接字符串）
-            return {"config": config}
+    async def _dispatch_notifications(self, message: str, **kwargs) -> bool:
+        """统一委托 Notifier 分发通知到当前账号所有已启用渠道
 
-    async def _send_dingtalk_notification(self, config_data: dict, message: str):
-        """发送钉钉通知"""
-        try:
-            import aiohttp
-            import json
-            import hmac
-            import hashlib
-            import base64
-            import time
-
-            # 解析配置
-            webhook_url = config_data.get('webhook_url') or config_data.get('config', '')
-            secret = config_data.get('secret', '')
-
-            webhook_url = webhook_url.strip() if webhook_url else ''
-            if not webhook_url:
-                logger.warning("钉钉通知配置为空")
-                return
-
-            # 如果有加签密钥，生成签名
-            if secret:
-                timestamp = str(round(time.time() * 1000))
-                secret_enc = secret.encode('utf-8')
-                string_to_sign = f'{timestamp}\n{secret}'
-                string_to_sign_enc = string_to_sign.encode('utf-8')
-                hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
-                sign = base64.b64encode(hmac_code).decode('utf-8')
-                webhook_url += f'&timestamp={timestamp}&sign={sign}'
-
-            data = {
-                "msgtype": "markdown",
-                "markdown": {
-                    "title": "闲鱼自动回复通知",
-                    "text": message
-                }
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json=data, timeout=10) as response:
-                    if response.status == 200:
-                        logger.info(f"钉钉通知发送成功")
-                    else:
-                        logger.warning(f"钉钉通知发送失败: {response.status}")
-
-        except Exception as e:
-            logger.error(f"发送钉钉通知异常: {self._safe_str(e)}")
-
-    async def _send_feishu_notification(self, config_data: dict, message: str):
-        """发送飞书通知"""
-        try:
-            import aiohttp
-            import json
-            import hmac
-            import hashlib
-            import base64
-
-            logger.info(f"📱 飞书通知 - 开始处理配置数据: {config_data}")
-
-            # 解析配置
-            webhook_url = config_data.get('webhook_url', '')
-            secret = config_data.get('secret', '')
-
-            logger.info(f"📱 飞书通知 - Webhook URL: {webhook_url[:50]}...")
-            logger.info(f"📱 飞书通知 - 是否有签名密钥: {'是' if secret else '否'}")
-
-            if not webhook_url:
-                logger.warning("📱 飞书通知 - Webhook URL配置为空，无法发送通知")
-                return
-
-            # 如果有加签密钥，生成签名
-            timestamp = str(int(time.time()))
-            sign = ""
-
-            if secret:
-                string_to_sign = f'{timestamp}\n{secret}'
-                hmac_code = hmac.new(
-                    string_to_sign.encode('utf-8'),
-                    ''.encode('utf-8'),
-                    digestmod=hashlib.sha256
-                ).digest()
-                sign = base64.b64encode(hmac_code).decode('utf-8')
-                logger.info(f"📱 飞书通知 - 已生成签名")
-
-            # 构建请求数据
-            data = {
-                "msg_type": "text",
-                "content": {
-                    "text": message
-                },
-                "timestamp": timestamp
-            }
-
-            # 如果有签名，添加到请求数据中
-            if sign:
-                data["sign"] = sign
-
-            logger.info(f"📱 飞书通知 - 请求数据构建完成")
-
-            # 发送POST请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json=data, timeout=10) as response:
-                    response_text = await response.text()
-                    logger.info(f"📱 飞书通知 - 响应状态: {response.status}")
-                    logger.info(f"📱 飞书通知 - 响应内容: {response_text}")
-
-                    if response.status == 200:
-                        try:
-                            response_json = json.loads(response_text)
-                            if response_json.get('code') == 0:
-                                logger.info(f"📱 飞书通知发送成功")
-                            else:
-                                logger.warning(f"📱 飞书通知发送失败: {response_json.get('msg', '未知错误')}")
-                        except json.JSONDecodeError:
-                            logger.info(f"📱 飞书通知发送成功（响应格式异常）")
-                    else:
-                        logger.warning(f"📱 飞书通知发送失败: HTTP {response.status}, 响应: {response_text}")
-
-        except Exception as e:
-            logger.error(f"📱 发送飞书通知异常: {self._safe_str(e)}")
-            import traceback
-            logger.error(f"📱 飞书通知异常详情: {traceback.format_exc()}")
-
-    async def _send_bark_notification(self, config_data: dict, message: str):
-        """发送Bark通知"""
-        try:
-            import aiohttp
-            import json
-            from urllib.parse import quote
-
-            logger.info(f"📱 Bark通知 - 开始处理配置数据: {config_data}")
-
-            # 解析配置
-            server_url = config_data.get('server_url', 'https://api.day.app').rstrip('/')
-            device_key = config_data.get('device_key', '')
-            title = config_data.get('title', '闲鱼自动回复通知')
-            sound = config_data.get('sound', 'default')
-            icon = config_data.get('icon', '')
-            group = config_data.get('group', 'xianyu')
-            url = config_data.get('url', '')
-
-            logger.info(f"📱 Bark通知 - 服务器: {server_url}")
-            logger.info(f"📱 Bark通知 - 设备密钥: {device_key[:10]}..." if device_key else "📱 Bark通知 - 设备密钥: 未设置")
-            logger.info(f"📱 Bark通知 - 标题: {title}")
-
-            if not device_key:
-                logger.warning("📱 Bark通知 - 设备密钥配置为空，无法发送通知")
-                return
-
-            # 构建请求URL和数据
-            # Bark支持两种方式：URL路径方式和POST JSON方式
-            # 这里使用POST JSON方式，更灵活且支持更多参数
-
-            api_url = f"{server_url}/push"
-
-            # 构建请求数据
-            data = {
-                "device_key": device_key,
-                "title": title,
-                "body": message,
-                "sound": sound,
-                "group": group
-            }
-
-            # 可选参数
-            if icon:
-                data["icon"] = icon
-            if url:
-                data["url"] = url
-
-            logger.info(f"📱 Bark通知 - API地址: {api_url}")
-            logger.info(f"📱 Bark通知 - 请求数据构建完成")
-
-            # 发送POST请求
-            async with aiohttp.ClientSession() as session:
-                async with session.post(api_url, json=data, timeout=10) as response:
-                    response_text = await response.text()
-                    logger.info(f"📱 Bark通知 - 响应状态: {response.status}")
-                    logger.info(f"📱 Bark通知 - 响应内容: {response_text}")
-
-                    if response.status == 200:
-                        try:
-                            response_json = json.loads(response_text)
-                            if response_json.get('code') == 200:
-                                logger.info(f"📱 Bark通知发送成功")
-                            else:
-                                logger.warning(f"📱 Bark通知发送失败: {response_json.get('message', '未知错误')}")
-                        except json.JSONDecodeError:
-                            # 某些Bark服务器可能返回纯文本
-                            if 'success' in response_text.lower() or 'ok' in response_text.lower():
-                                logger.info(f"📱 Bark通知发送成功")
-                            else:
-                                logger.warning(f"📱 Bark通知响应格式异常: {response_text}")
-                    else:
-                        logger.warning(f"📱 Bark通知发送失败: HTTP {response.status}, 响应: {response_text}")
-
-        except Exception as e:
-            logger.error(f"📱 发送Bark通知异常: {self._safe_str(e)}")
-            import traceback
-            logger.error(f"📱 Bark通知异常详情: {traceback.format_exc()}")
-
-    async def _send_email_notification(self, config_data: dict, message: str, attachment_path: str = None):
-        """发送邮件通知（支持附件）
-        
         Args:
-            config_data: 邮件配置
-            message: 邮件正文
-            attachment_path: 附件文件路径（可选）
+            message: 通知正文
+            **kwargs: 透传给 Channel.send 的额外参数（如 attachment_path）
+
+        Returns:
+            是否至少有一个渠道发送成功
         """
+        if self.notifier is None:
+            logger.warning("📱 Notifier 未初始化（notify 模块不可用），跳过通知发送")
+            return False
+
         try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            from email.mime.image import MIMEImage
-            import os
-
-            # 解析配置
-            smtp_server = config_data.get('smtp_server', '')
-            smtp_port = int(config_data.get('smtp_port', 587))
-            email_user = config_data.get('email_user', '')
-            email_password = config_data.get('email_password', '')
-            recipient_email = config_data.get('recipient_email', '')
-            smtp_use_tls = config_data.get('smtp_use_tls', smtp_port == 587)  # 修复：添加变量定义
-
-            if not all([smtp_server, email_user, email_password, recipient_email]):
-                logger.warning("邮件通知配置不完整")
-                return
-
-            # 创建邮件
-            msg = MIMEMultipart()
-            msg['From'] = email_user
-            msg['To'] = recipient_email
-            msg['Subject'] = "闲鱼自动回复通知"
-
-            # 添加邮件正文
-            msg.attach(MIMEText(message, 'plain', 'utf-8'))
-
-            # 添加附件（如果有）
-            if attachment_path and os.path.exists(attachment_path):
-                try:
-                    with open(attachment_path, 'rb') as f:
-                        img_data = f.read()
-                    
-                    # 根据文件扩展名判断MIME类型
-                    filename = os.path.basename(attachment_path)
-                    if attachment_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
-                        img = MIMEImage(img_data)
-                        img.add_header('Content-Disposition', 'attachment', filename=filename)
-                        msg.attach(img)
-                        logger.info(f"已添加图片附件: {filename}")
-                    else:
-                        from email.mime.application import MIMEApplication
-                        attach = MIMEApplication(img_data)
-                        attach.add_header('Content-Disposition', 'attachment', filename=filename)
-                        msg.attach(attach)
-                        logger.info(f"已添加附件: {filename}")
-                except Exception as attach_error:
-                    logger.error(f"添加邮件附件失败: {self._safe_str(attach_error)}")
-
-            # 发送邮件
-            server = None
-            try:
-                if smtp_port == 465:
-                    # 使用SSL连接（端口465）
-                    server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
-                else:
-                    # 使用普通连接，然后升级到TLS（端口587）
-                    server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-                    if smtp_use_tls:
-                        server.starttls()
-                
-                # 尝试登录
-                try:
-                    server.login(email_user, email_password)
-                except smtplib.SMTPAuthenticationError as auth_error:
-                    error_code = auth_error.smtp_code if hasattr(auth_error, 'smtp_code') else None
-                    error_msg = str(auth_error)
-                    
-                    # 提供详细的错误提示
-                    logger.error(f"邮件SMTP认证失败 (错误码: {error_code})")
-                    logger.error(f"邮箱地址: {email_user}")
-                    logger.error(f"SMTP服务器: {smtp_server}:{smtp_port}")
-                    logger.error(f"错误详情: {error_msg}")
-                    
-                    # 根据常见错误提供解决建议
-                    suggestions = []
-                    if 'qq.com' in email_user.lower() or 'qq' in smtp_server.lower():
-                        suggestions.append("QQ邮箱需要使用授权码而不是登录密码")
-                        suggestions.append("请到QQ邮箱设置 -> 账户 -> 开启SMTP服务 -> 生成授权码")
-                    elif 'gmail.com' in email_user.lower() or 'gmail' in smtp_server.lower():
-                        suggestions.append("Gmail需要使用应用专用密码")
-                        suggestions.append("请到Google账户 -> 安全性 -> 两步验证 -> 应用专用密码")
-                        suggestions.append("或启用'允许不够安全的应用访问'（不推荐）")
-                    elif '163.com' in email_user.lower() or '126.com' in email_user.lower() or 'yeah.net' in email_user.lower():
-                        suggestions.append("网易邮箱需要使用授权码")
-                        suggestions.append("请到邮箱设置 -> POP3/SMTP/IMAP -> 开启SMTP服务 -> 生成授权码")
-                    else:
-                        suggestions.append("请检查邮箱密码/授权码是否正确")
-                        suggestions.append("某些邮箱服务商需要使用授权码而不是登录密码")
-                        suggestions.append("请查看邮箱服务商的SMTP设置说明")
-                    
-                    if suggestions:
-                        logger.error("解决建议:")
-                        for i, suggestion in enumerate(suggestions, 1):
-                            logger.error(f"  {i}. {suggestion}")
-                    
-                    raise  # 重新抛出异常
-                
-                server.send_message(msg)
-                logger.info(f"邮件通知发送成功: {recipient_email}")
-
-            finally:
-                # 确保关闭连接
-                if server:
-                    try:
-                        server.quit()
-                    except:
-                        try:
-                            server.close()
-                        except:
-                            pass
-
-        except smtplib.SMTPAuthenticationError:
-            # 认证错误已在上面处理，这里不再重复记录
-            pass
-        except smtplib.SMTPException as smtp_error:
-            logger.error(f"SMTP协议错误: {self._safe_str(smtp_error)}")
-            logger.error(f"SMTP服务器: {smtp_server}:{smtp_port}")
-            logger.error(f"请检查SMTP服务器地址和端口配置是否正确")
+            notifications = db_manager.get_account_notifications(self.cookie_id)
         except Exception as e:
-            logger.error(f"发送邮件通知异常: {self._safe_str(e)}")
-            import traceback
-            logger.error(f"邮件发送详细错误: {traceback.format_exc()}")
+            logger.error(f"📱 加载账号 {self.cookie_id} 通知配置失败: {self._safe_str(e)}")
+            return False
 
-    async def _send_webhook_notification(self, config_data: dict, message: str):
-        """发送Webhook通知"""
-        try:
-            import aiohttp
-            import json
+        if not notifications:
+            logger.info(f"📱 账号 {self.cookie_id} 未配置消息通知，跳过通知发送")
+            return False
 
-            # 解析配置
-            webhook_url = config_data.get('webhook_url', '')
-            http_method = config_data.get('http_method', 'POST').upper()
-            headers_str = config_data.get('headers', '{}')
-
-            if not webhook_url:
-                logger.warning("Webhook通知配置为空")
-                return
-
-            # 解析自定义请求头
-            try:
-                custom_headers = json.loads(headers_str) if headers_str else {}
-            except json.JSONDecodeError:
-                custom_headers = {}
-
-            # 设置默认请求头
-            headers = {'Content-Type': 'application/json'}
-            headers.update(custom_headers)
-
-            # 构建请求数据
-            data = {
-                'message': message,
-                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'source': 'xianyu-auto-reply'
-            }
-
-            async with aiohttp.ClientSession() as session:
-                if http_method == 'POST':
-                    async with session.post(webhook_url, json=data, headers=headers, timeout=10) as response:
-                        if response.status == 200:
-                            logger.info(f"Webhook通知发送成功")
-                        else:
-                            logger.warning(f"Webhook通知发送失败: {response.status}")
-                elif http_method == 'PUT':
-                    async with session.put(webhook_url, json=data, headers=headers, timeout=10) as response:
-                        if response.status == 200:
-                            logger.info(f"Webhook通知发送成功")
-                        else:
-                            logger.warning(f"Webhook通知发送失败: {response.status}")
-                else:
-                    logger.warning(f"不支持的HTTP方法: {http_method}")
-
-        except Exception as e:
-            logger.error(f"发送Webhook通知异常: {self._safe_str(e)}")
-
-    async def _send_wechat_notification(self, config_data: dict, message: str):
-        """发送微信通知"""
-        try:
-            import aiohttp
-            import json
-
-            # 解析配置
-            webhook_url = config_data.get('webhook_url', '')
-
-            if not webhook_url:
-                logger.warning("微信通知配置为空")
-                return
-
-            data = {
-                "msgtype": "text",
-                "text": {
-                    "content": message
-                }
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json=data, timeout=10) as response:
-                    if response.status == 200:
-                        logger.info(f"微信通知发送成功")
-                    else:
-                        logger.warning(f"微信通知发送失败: {response.status}")
-
-        except Exception as e:
-            logger.error(f"发送微信通知异常: {self._safe_str(e)}")
-
-    async def _send_telegram_notification(self, config_data: dict, message: str):
-        """发送Telegram通知"""
-        try:
-            import aiohttp
-
-            # 解析配置
-            bot_token = config_data.get('bot_token', '')
-            chat_id = config_data.get('chat_id', '')
-
-            if not all([bot_token, chat_id]):
-                logger.warning("Telegram通知配置不完整")
-                return
-
-            # 构建API URL
-            api_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-
-            data = {
-                'chat_id': chat_id,
-                'text': message,
-                'parse_mode': 'HTML'
-            }
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(api_url, json=data, timeout=10) as response:
-                    if response.status == 200:
-                        logger.info(f"Telegram通知发送成功")
-                    else:
-                        logger.warning(f"Telegram通知发送失败: {response.status}")
-
-        except Exception as e:
-            logger.error(f"发送Telegram通知异常: {self._safe_str(e)}")
+        logger.info(f"📱 找到 {len(notifications)} 个通知渠道配置")
+        results = await self.notifier.dispatch(notifications, message, **kwargs)
+        return any(results.values())
 
     async def send_token_refresh_notification(self, error_message: str, notification_type: str = "token_refresh", chat_id: str = None, attachment_path: str = None, verification_url: str = None):
         """发送Token刷新异常通知（带防重复机制，支持附件）
-        
-        Args:
-            error_message: 错误消息
-            notification_type: 通知类型
-            chat_id: 聊天ID（可选）
-            attachment_path: 附件路径（可选，用于发送截图）
+
+        防重复/冷却由本类管理，渠道分发委托 Notifier。
         """
         try:
             # 检查是否是正常的令牌过期，这种情况不需要发送通知
@@ -4174,15 +3719,6 @@ class XianyuLive:
                 logger.warning(f"Token刷新通知在冷却期内，跳过发送: {notification_type} (还需等待 {time_desc})")
                 return
 
-            from db_manager import db_manager
-
-            # 获取当前账号的通知配置
-            notifications = db_manager.get_account_notifications(self.cookie_id)
-
-            if not notifications:
-                logger.warning("未配置消息通知，跳过Token刷新通知")
-                return
-
             # 构造通知消息
             # 判断异常信息中是否包含"滑块验证成功"
             if "滑块验证成功" in error_message:
@@ -4204,60 +3740,17 @@ class XianyuLive:
 
             logger.info(f"准备发送Token刷新异常通知: {self.cookie_id}")
 
-            # 发送通知到各个渠道
-            notification_sent = False
-            for notification in notifications:
-                if not notification.get('enabled', True):
-                    continue
-
-                channel_type = notification.get('channel_type')
-                channel_config = notification.get('channel_config')
-
-                try:
-                    # 解析配置数据
-                    config_data = self._parse_notification_config(channel_config)
-
-                    match channel_type:
-                        case 'ding_talk' | 'dingtalk':
-                            await self._send_dingtalk_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case 'feishu' | 'lark':
-                            await self._send_feishu_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case 'bark':
-                            await self._send_bark_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case 'email':
-                            # 邮件支持附件
-                            await self._send_email_notification(config_data, notification_msg, attachment_path)
-                            notification_sent = True
-                        case 'webhook':
-                            await self._send_webhook_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case 'wechat':
-                            await self._send_wechat_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case 'telegram':
-                            await self._send_telegram_notification(config_data, notification_msg)
-                            notification_sent = True
-                        case _:
-                            logger.warning(f"不支持的通知渠道类型: {channel_type}")
-
-                except Exception as notify_error:
-                    logger.error(f"发送Token刷新通知失败 ({notification.get('channel_name', 'Unknown')}): {self._safe_str(notify_error)}")
+            # 委托 Notifier 分发到所有渠道（attachment_path 透传给支持附件的渠道，如 email）
+            notification_sent = await self._dispatch_notifications(
+                notification_msg,
+                attachment_path=attachment_path,
+            )
 
             # 如果成功发送了通知，更新最后发送时间
             if notification_sent:
                 self.last_notification_time[notification_type] = current_time
 
-                # 根据错误消息内容使用不同的冷却时间
-                if self._is_token_related_error(error_message):
-                    next_send_time = current_time + self.token_refresh_notification_cooldown
-                    cooldown_desc = "3小时"
-                else:
-                    next_send_time = current_time + self.notification_cooldown
-                    cooldown_desc = f"{self.notification_cooldown // 60}分钟"
-
+                next_send_time = current_time + cooldown_time
                 next_send_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(next_send_time))
                 logger.info(f"Token刷新通知已发送，下次可发送时间: {next_send_time_str} (冷却时间: {cooldown_desc})")
 
@@ -4337,17 +3830,8 @@ class XianyuLive:
         return False
 
     async def send_delivery_failure_notification(self, send_user_name: str, send_user_id: str, item_id: str, error_message: str, chat_id: str = None):
-        """发送自动发货失败通知"""
+        """发送自动发货失败通知（渠道分发委托 Notifier）"""
         try:
-            from db_manager import db_manager
-
-            # 获取当前账号的通知配置
-            notifications = db_manager.get_account_notifications(self.cookie_id)
-
-            if not notifications:
-                logger.warning("未配置消息通知，跳过自动发货通知")
-                return
-
             # 构造通知消息
             notification_message = f"🚨 自动发货通知\n\n" \
                                  f"账号: {self.cookie_id}\n" \
@@ -4358,43 +3842,7 @@ class XianyuLive:
                                  f"时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n" \
                                  f"请及时处理！"
 
-            # 发送通知到所有已启用的通知渠道
-            for notification in notifications:
-                if notification.get('enabled', False):
-                    channel_type = notification.get('channel_type', 'qq')
-                    channel_config = notification.get('channel_config', '')
-
-                    try:
-                        # 解析配置数据
-                        config_data = self._parse_notification_config(channel_config)
-
-                        match channel_type:
-                            case 'ding_talk' | 'dingtalk':
-                                await self._send_dingtalk_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到钉钉")
-                            case 'email':
-                                await self._send_email_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到邮箱")
-                            case 'webhook':
-                                await self._send_webhook_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到Webhook")
-                            case 'wechat':
-                                await self._send_wechat_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到微信")
-                            case 'telegram':
-                                await self._send_telegram_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到Telegram")
-                            case 'bark':
-                                await self._send_bark_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到Bark")
-                            case 'feishu' | 'lark':
-                                await self._send_feishu_notification(config_data, notification_message)
-                                logger.info(f"已发送自动发货通知到飞书")
-                            case _:
-                                logger.warning(f"不支持的通知渠道类型: {channel_type}")
-
-                    except Exception as notify_error:
-                        logger.error(f"发送自动发货通知失败: {self._safe_str(notify_error)}")
+            await self._dispatch_notifications(notification_message)
 
         except Exception as e:
             logger.error(f"发送自动发货通知异常: {self._safe_str(e)}")
@@ -4472,8 +3920,8 @@ class XianyuLive:
             try:
                 logger.info(f"【{self.cookie_id}】开始获取订单详情: {order_id}")
 
-                # 导入订单详情获取器
-                from utils.order_detail_fetcher import fetch_order_detail_simple
+                # 使用优化版订单获取器（浏览器池 + API拦截 + DOM解析，取代旧版 order_detail_fetcher）
+                from utils.order_fetcher_optimized import fetch_order_complete
                 from db_manager import db_manager
 
                 # 获取当前账号的cookie字符串
@@ -4485,8 +3933,11 @@ class XianyuLive:
                 if not headless_mode:
                     logger.info(f"【{self.cookie_id}】🖥️ 启用有头模式进行调试")
 
-                # 异步获取订单详情（使用当前账号的cookie）
-                result = await fetch_order_detail_simple(order_id, cookie_string, headless=headless_mode)
+                # 异步获取订单详情（使用浏览器池复用实例，API+DOM 双通道）
+                result = await fetch_order_complete(
+                    order_id, self.cookie_id, cookie_string,
+                    headless=headless_mode, use_pool=True
+                )
 
                 if result:
                     logger.info(f"【{self.cookie_id}】订单详情获取成功: {order_id}")
@@ -4736,7 +4187,7 @@ class XianyuLive:
                 db_item_info = db_manager.get_item_info(self.cookie_id, item_id)
                 if db_item_info:
                     item_title_for_save = db_item_info.get('item_title', '').strip()
-            except:
+            except Exception:
                 pass
 
             # 如果有商品标题，则保存商品信息
@@ -4978,7 +4429,7 @@ class XianyuLive:
                         content = result.get('data') or result.get('content') or result.get('card') or str(result)
                     else:
                         content = str(result)
-                except:
+                except Exception:
                     content = response_text
 
                 logger.info(f"API调用成功，返回内容长度: {len(content)}")
@@ -6002,20 +5453,16 @@ class XianyuLive:
             logger.info(f"【{target_cookie_id}】==========================================")
 
             # 打印完整的真实Cookie内容
-            logger.info(f"【{target_cookie_id}】=== 完整真实Cookie内容 ===")
+            logger.info(f"【{target_cookie_id}】=== 真实Cookie内容摘要 ===")
             logger.info(f"【{target_cookie_id}】Cookie字符串长度: {len(real_cookies_str)}")
-            logger.info(f"【{target_cookie_id}】Cookie完整内容:")
-            logger.info(f"【{target_cookie_id}】{real_cookies_str}")
+            # 安全：Cookie 含登录令牌，仅记录脱敏摘要，避免泄露凭据
+            logger.info(f"【{target_cookie_id}】{_safe_cookie_summary(real_cookies_str, 'Cookie')}")
 
             # 打印所有Cookie字段的详细信息
-            logger.info(f"【{target_cookie_id}】=== Cookie字段详细信息 ===")
+            logger.info(f"【{target_cookie_id}】=== Cookie字段列表（仅字段名与长度） ===")
             for i, (name, value) in enumerate(real_cookies_dict.items(), 1):
-                # 对于长值，显示前后部分
-                if len(value) > 50:
-                    display_value = f"{value[:20]}...{value[-20:]}"
-                else:
-                    display_value = value
-                logger.info(f"【{target_cookie_id}】{i:2d}. {name}: {display_value}")
+                # 安全：仅显示字段名和值长度，不显示明文值
+                logger.info(f"【{target_cookie_id}】{i:2d}. {name}: (长度:{len(value) if value else 0})")
 
             # 打印原始扫码Cookie对比
             logger.info(f"【{target_cookie_id}】=== 扫码Cookie对比 ===")
@@ -6127,7 +5574,7 @@ class XianyuLive:
                         try:
                             if hasattr(browser, '_connection'):
                                 browser._connection = None
-                        except:
+                        except Exception:
                             pass
                     except Exception as e:
                         logger.warning(f"【{target_cookie_id}】关闭浏览器时出错: {self._safe_str(e)}")
@@ -6147,7 +5594,7 @@ class XianyuLive:
                             # 取消可能正在运行的Playwright任务
                             if hasattr(playwright, '_transport'):
                                 playwright._transport = None
-                        except:
+                        except Exception:
                             pass
                     except Exception as e:
                         logger.warning(f"【{target_cookie_id}】关闭Playwright时出错: {self._safe_str(e)}")
@@ -6371,7 +5818,8 @@ class XianyuLive:
             real_cookies_str = '; '.join([f"{k}={v}" for k, v in real_cookies_dict.items()])
 
             logger.info(f"【{self.cookie_id}】真实Cookie已获取，包含 {len(real_cookies_dict)} 个字段")
-            logger.info(f"【{self.cookie_id}】真实Cookie: {real_cookies_str}")
+            # 安全：Cookie 含登录令牌，仅记录脱敏摘要
+            logger.info(f"【{self.cookie_id}】{_safe_cookie_summary(real_cookies_str, '真实Cookie')}")
             # 检查关键字段
             important_keys = ['unb', '_m_h5_tk', '_m_h5_tk_enc', 'cookie2', 't', 'sgcookie', 'cna']
             logger.info(f"【{self.cookie_id}】关键字段检查:")
@@ -6712,24 +6160,19 @@ class XianyuLive:
             if not changed_cookies and not new_cookies:
                 logger.info(f"【{self.cookie_id}】Cookie无变化")
 
-            # 打印完整的更新后Cookie（可选择性启用）
-            logger.info(f"【{self.cookie_id}】更新后的完整Cookie: {self.cookies_str}")
+            # 安全：仅记录脱敏摘要，避免明文 Cookie 写入日志
+            logger.info(f"【{self.cookie_id}】{_safe_cookie_summary(self.cookies_str, '更新后Cookie')}")
 
-            # 打印主要的Cookie字段详情
+            # 打印主要的Cookie字段详情（仅显示存在性与长度，不显示值）
             important_cookies = ['_m_h5_tk', '_m_h5_tk_enc', 'cookie2', 't', 'sgcookie', 'unb', 'uc1', 'uc3', 'uc4']
-            logger.info(f"【{self.cookie_id}】重要Cookie字段详情:")
+            logger.info(f"【{self.cookie_id}】重要Cookie字段状态:")
             for cookie_name in important_cookies:
                 if cookie_name in new_cookies_dict:
                     cookie_value = new_cookies_dict[cookie_name]
-                    # 对于敏感信息，只显示前后几位
-                    if len(cookie_value) > 20:
-                        display_value = f"{cookie_value[:8]}...{cookie_value[-8:]}"
-                    else:
-                        display_value = cookie_value
-
-                    # 标记是否发生了变化
+                    # 仅显示长度和存在性，避免泄露 Cookie 值
+                    value_len = len(cookie_value) if cookie_value else 0
                     change_mark = " [已变化]" if cookie_name in changed_cookies else " [新增]" if cookie_name in new_cookies else ""
-                    logger.info(f"【{self.cookie_id}】  {cookie_name}: {display_value}{change_mark}")
+                    logger.info(f"【{self.cookie_id}】  {cookie_name}: 存在(长度:{value_len}){change_mark}")
 
             # 更新数据库中的Cookie
             await self.update_config_cookies()
@@ -7613,7 +7056,7 @@ class XianyuLive:
                                     temp_user_id = "unknown_user"
                             else:
                                 temp_user_id = "unknown_user"
-                        except:
+                        except Exception:
                             temp_user_id = "unknown_user"
 
                         # 提取商品ID
@@ -7625,7 +7068,7 @@ class XianyuLive:
 
                             if not temp_item_id:
                                 temp_item_id = self.extract_item_id_from_message(message)
-                        except:
+                        except Exception:
                             pass
 
                         # 检查是否已经在获取该订单详情
@@ -7708,7 +7151,7 @@ class XianyuLive:
                     user_url = f'https://www.goofish.com/personal?userId={user_id}'
                     logger.info(f'[{msg_time}] 【系统】交易成功 {user_url} 等待卖家发货')
                     # return
-            except:
+            except Exception:
                 pass
 
             # 判断是否为聊天消息
@@ -8190,7 +7633,7 @@ class XianyuLive:
                         # 强制刷新日志缓冲区，确保日志被写入
                         try:
                             sys.stdout.flush()
-                        except:
+                        except Exception:
                             pass
                         
                         # 使用可中断的sleep，每5秒输出一次心跳日志
@@ -8209,7 +7652,7 @@ class XianyuLive:
                                     # 定期刷新日志
                                     try:
                                         sys.stdout.flush()
-                                    except:
+                                    except Exception:
                                         pass
                             except asyncio.CancelledError:
                                 logger.warning(f"【{self.cookie_id}】等待期间收到取消信号")
@@ -8226,7 +7669,7 @@ class XianyuLive:
                         # 再次强制刷新日志
                         try:
                             sys.stdout.flush()
-                        except:
+                        except Exception:
                             pass
                         
                     except Exception as cleanup_error:
@@ -8717,6 +8160,6 @@ class XianyuLive:
             return False
 
 if __name__ == '__main__':
-    cookies_str = os.getenv('COOKIES_STR')
-    xianyuLive = XianyuLive(cookies_str)
+    from config import COOKIES_STR as _cfg_cookies_str
+    xianyuLive = XianyuLive(_cfg_cookies_str)
     asyncio.run(xianyuLive.main())

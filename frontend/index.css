@@ -368,3 +368,116 @@ body {
     padding-right: 1.5rem;
   }
 }
+
+/* ============================================
+   全局触摸优化（移动端）
+   ============================================ */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+body {
+  overscroll-behavior-y: contain;
+}
+
+button,
+a,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* iOS 安全区 */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-x { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+
+/* ============================================
+   移动端响应式增强
+   ============================================ */
+@media (max-width: 768px) {
+  /* 按钮最小触摸区 44px */
+  button:not(:disabled),
+  a[role="button"],
+  [role="button"] {
+    min-height: 44px;
+  }
+
+  /* 标题与圆角自适应 */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+
+  /* 卡片内边距收紧 */
+  .ios-card { padding: 0; }
+  .ios-card > .p-6 { padding: 1rem; }
+
+  /* 模态框全屏化（移动端） */
+  .modal-overlay {
+    padding: 0;
+    align-items: stretch;
+  }
+  .modal-container {
+    max-width: 100% !important;
+    max-height: 100vh !important;
+    min-height: 100vh;
+    border-radius: 0;
+    margin: 0;
+  }
+  .modal-container-lg {
+    max-width: 100% !important;
+  }
+
+  /* 表格横向滚动（避免溢出） */
+  .table-wrap, .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 表格卡片化降级：在小屏将 table 转为块 */
+  .table-card-mobile thead { display: none; }
+  .table-card-mobile tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    border: 1px solid #F3F4F6;
+    border-radius: 1rem;
+    padding: 0.75rem;
+  }
+  .table-card-mobile td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border: none;
+  }
+  .table-card-mobile td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #6B7280;
+    font-size: 0.75rem;
+    margin-right: 1rem;
+  }
+}
+
+/* 横屏平板适配 */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .container { max-width: 100%; }
+}
+
+/* 大屏优化 */
+@media (min-width: 1280px) {
+  .max-w-screen-xl { max-width: 1280px; }
+}
+
+/* 焦点可见性（无障碍） */
+:focus-visible {
+  outline: 2px solid #FFE815;
+  outline-offset: 2px;
+}
+
+/* 减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

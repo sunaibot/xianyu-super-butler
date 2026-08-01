@@ -1,39 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { AdminStats, OrderAnalytics, Order, OrderStatus, Item } from '../types';
-import { getAdminStats, getOrderAnalytics, getValidOrders, getItems } from '../services/api';
+import { AdminStats, OrderAnalytics, Order, OrderStatus, Item, PerformanceStats } from '../types';
+import { getAdminStats, getOrderAnalytics, getValidOrders, getItems, getPerformanceStats, resetPerformanceStats } from '../services/api';
 import { useWebSocketContext } from '../contexts/WebSocketContext';
-import { TrendingUp, Users, ShoppingCart, AlertCircle, DollarSign, Activity, Package, ArrowUpRight, Calendar, X, BarChart3, PackageCheck, ExternalLink, Eye, Edit, RefreshCw } from 'lucide-react';
+import { useNavigate } from '../contexts/NavigateContext';
+import { TrendingUp, Users, ShoppingCart, AlertCircle, DollarSign, Activity, Package, ArrowUpRight, Calendar, X, BarChart3, PackageCheck, ExternalLink, Eye, Edit, RefreshCw, Gauge, Clock, Brain, Zap, Trash2, BookOpen } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Legend } from 'recharts';
+import { useConfirm } from '../hooks/useConfirm';
+import { OrderStatusBadge } from './ui/Badge';
 
-// 状态徽章组件
-const StatusBadge: React.FC<{ status: OrderStatus }> = ({ status }) => {
-  const styles = {
-    processing: 'bg-yellow-100 text-yellow-800',
-    pending_ship: 'bg-[#FFE815] text-black',
-    shipped: 'bg-blue-100 text-blue-700',
-    completed: 'bg-green-100 text-green-700',
-    cancelled: 'bg-gray-100 text-gray-500',
-    refunding: 'bg-red-100 text-red-600',
-  };
-
-  const labels = {
-    processing: '处理中',
-    pending_ship: '待发货',
-    shipped: '已发货',
-    completed: '已完成',
-    cancelled: '已取消',
-    refunding: '退款中',
-  };
-
-  return (
-    <span className={`px-3 py-1.5 rounded-lg text-xs font-bold ${styles[status] || styles.cancelled}`}>
-      {labels[status] || status}
-    </span>
-  );
-};
-
-const StatCard: React.FC<{ title: string; value: string | number; icon: React.ElementType; colorClass: string; trend?: string }> = ({ title, value, icon: Icon, colorClass, trend }) => (
-  <div className="ios-card p-6 rounded-[2rem] flex flex-col justify-between hover:translate-y-[-4px] transition-all duration-300 h-full relative overflow-hidden group border-0">
+const StatCard: React.FC<{ title: string; value: string | number; icon: React.ElementType; colorClass: string; trend?: string; onClick?: () => void }> = ({ title, value, icon: Icon, colorClass, trend, onClick }) => (
+  <div
+    onClick={onClick}
+    className={`ios-card p-6 rounded-[2rem] flex flex-col justify-between hover:translate-y-[-4px] transition-all duration-300 h-full relative overflow-hidden group border-0 ${onClick ? 'cursor-pointer' : ''}`}
+  >
     <div className={`absolute -right-6 -top-6 w-32 h-32 ${colorClass} opacity-10 rounded-full group-hover:scale-125 transition-transform duration-500 blur-2xl`}></div>
     <div className="flex justify-between items-start mb-6">
       <div className={`p-4 rounded-2xl ${colorClass} bg-opacity-10 backdrop-blur-sm`}>
@@ -46,6 +25,7 @@ const StatCard: React.FC<{ title: string; value: string | number; icon: React.El
     <div className="relative z-10">
       <h3 className="text-3xl font-extrabold text-gray-900 tracking-tight font-feature-settings-tnum">{value}</h3>
       <p className="text-gray-500 text-sm font-medium mt-1">{title}</p>
+      {onClick && <span className="text-xs text-gray-400 mt-2 inline-flex items-center gap-1">点击查看 <ArrowUpRight className="w-3 h-3" /></span>}
     </div>
   </div>
 );
@@ -54,6 +34,8 @@ type TimeRange = 'today' | 'yesterday' | '3days' | '7days' | '30days' | 'custom'
 
 const Dashboard: React.FC = () => {
   const { onEvent } = useWebSocketContext();
+  const { navigate } = useNavigate();
+  const confirm = useConfirm();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [analytics, setAnalytics] = useState<OrderAnalytics | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('7days');
@@ -70,9 +52,34 @@ const Dashboard: React.FC = () => {
   // 商品列表
   const [items, setItems] = useState<Item[]>([]);
   const [itemNames, setItemNames] = useState<Record<string, string>>({});
+  // 性能监控
+  const [perfStats, setPerfStats] = useState<PerformanceStats | null>(null);
+  const [perfLoading, setPerfLoading] = useState(false);
 
   // 颜色配置
   const COLORS = ['#FFE815', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
+
+  const loadPerfStats = async () => {
+    setPerfLoading(true);
+    try {
+      const data = await getPerformanceStats();
+      setPerfStats(data);
+    } catch (e) {
+      console.error('加载性能统计失败:', e);
+    } finally {
+      setPerfLoading(false);
+    }
+  };
+
+  const handleResetPerf = async () => {
+    if (!(await confirm({ title: '确认重置性能监控数据', content: '此操作将清除所有历史数据，不可恢复。', variant: 'danger' }))) return;
+    try {
+      await resetPerformanceStats();
+      await loadPerfStats();
+    } catch (e) {
+      console.error('重置性能统计失败:', e);
+    }
+  };
 
   const loadAnalytics = (range: TimeRange) => {
     // 使用本地时间而不是UTC时间
@@ -264,6 +271,7 @@ const Dashboard: React.FC = () => {
       });
       setItemNames(nameMap);
     }).catch(console.error);
+    loadPerfStats();
   }, [timeRange]);
 
   useEffect(() => {
@@ -427,6 +435,7 @@ const Dashboard: React.FC = () => {
           <>
             <input
               type="date"
+              aria-label="开始日期"
               value={customStartDate}
               onChange={(e) => setCustomStartDate(e.target.value)}
               className="px-3 py-2 rounded-xl text-sm border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFE815]"
@@ -434,6 +443,7 @@ const Dashboard: React.FC = () => {
             <span className="self-center text-gray-400">-</span>
             <input
               type="date"
+              aria-label="结束日期"
               value={customEndDate}
               onChange={(e) => setCustomEndDate(e.target.value)}
               className="px-3 py-2 rounded-xl text-sm border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#FFE815]"
@@ -456,25 +466,187 @@ const Dashboard: React.FC = () => {
           icon={DollarSign}
           colorClass="bg-yellow-400"
           trend={getTrendPercent() || undefined}
+          onClick={() => navigate('orders')}
         />
         <StatCard
           title="活跃账号 / 总数"
           value={`${stats.active_cookies} / ${stats.total_cookies}`}
           icon={Users}
           colorClass="bg-blue-500"
+          onClick={() => navigate('accounts')}
         />
         <StatCard
           title="订单数"
           value={analytics.revenue_stats.total_orders.toLocaleString()}
           icon={ShoppingCart}
           colorClass="bg-orange-500"
+          onClick={() => navigate('orders')}
         />
         <StatCard
           title="库存卡密余量"
           value={stats.total_cards}
           icon={Package}
           colorClass="bg-purple-500"
+          onClick={() => navigate('cards')}
         />
+      </div>
+
+      {/* Performance Monitor */}
+      <div className="ios-card p-6 rounded-[2rem]">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+            <Gauge className="w-5 h-5 text-amber-500" />
+            性能监控
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadPerfStats}
+              disabled={perfLoading}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="刷新"
+            >
+              <RefreshCw className={`w-4 h-4 ${perfLoading ? 'animate-spin' : ''}`} />
+            </button>
+            <button
+              onClick={handleResetPerf}
+              className="p-2 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+              title="重置数据"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        {perfLoading && !perfStats ? (
+          <div className="flex items-center justify-center py-8 text-gray-400">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" />
+            加载中...
+          </div>
+        ) : perfStats ? (
+          <div className="space-y-6">
+            {/* Today Stats */}
+            <div>
+              <h4 className="text-sm font-bold text-gray-500 mb-3">今日统计</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-bold text-blue-700">总回复数</span>
+                  </div>
+                  <div className="text-2xl font-extrabold text-gray-900">{perfStats.today?.total_replies || 0}</div>
+                </div>
+                <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs font-bold text-purple-700">AI回复</span>
+                  </div>
+                  <div className="text-2xl font-extrabold text-gray-900">{perfStats.today?.ai_replies || 0}</div>
+                </div>
+                <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <BookOpen className="w-4 h-4 text-green-600" />
+                    <span className="text-xs font-bold text-green-700">知识库命中</span>
+                  </div>
+                  <div className="text-2xl font-extrabold text-gray-900">{perfStats.today?.kb_matches || 0}</div>
+                </div>
+                <div className="p-4 bg-gradient-to-br from-amber-50 to-amber-100 rounded-xl">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Clock className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-700">平均响应</span>
+                  </div>
+                  <div className="text-2xl font-extrabold text-gray-900">{perfStats.today?.avg_response_time ? (perfStats.today.avg_response_time / 1000).toFixed(2) + 's' : '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary */}
+            {perfStats.summary && (
+              <div>
+                <h4 className="text-sm font-bold text-gray-500 mb-3">历史汇总</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="p-3 bg-gray-50 rounded-xl">
+                    <div className="text-xs text-gray-500">累计回复</div>
+                    <div className="text-xl font-bold text-gray-900">{perfStats.summary.total_replies || 0}</div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl">
+                    <div className="text-xs text-gray-500">AI回复占比</div>
+                    <div className="text-xl font-bold text-gray-900">
+                      {perfStats.summary.total_replies > 0
+                        ? ((perfStats.summary.ai_replies / perfStats.summary.total_replies) * 100).toFixed(1) + '%'
+                        : '0%'}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl">
+                    <div className="text-xs text-gray-500">知识库命中率</div>
+                    <div className="text-xl font-bold text-gray-900">
+                      {perfStats.summary.total_replies > 0
+                        ? ((perfStats.summary.kb_matches / perfStats.summary.total_replies) * 100).toFixed(1) + '%'
+                        : '0%'}
+                    </div>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl">
+                    <div className="text-xs text-gray-500">最快响应</div>
+                    <div className="text-xl font-bold text-gray-900">
+                      {perfStats.summary.min_response_time ? (perfStats.summary.min_response_time / 1000).toFixed(2) + 's' : '-'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recent Records */}
+            {perfStats.recent && perfStats.recent.length > 0 && (
+              <div>
+                <h4 className="text-sm font-bold text-gray-500 mb-3">最近回复记录</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 text-gray-500 text-xs">
+                        <th className="px-3 py-2 text-left">时间</th>
+                        <th className="px-3 py-2 text-left">意图</th>
+                        <th className="px-3 py-2 text-left">来源</th>
+                        <th className="px-3 py-2 text-right">耗时</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {perfStats.recent.slice(0, 10).map((record, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-600 text-xs">{new Date(record.timestamp).toLocaleString('zh-CN')}</td>
+                          <td className="px-3 py-2 font-medium text-gray-800">{record.intent || '-'}</td>
+                          <td className="px-3 py-2">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              record.source === 'ai' ? 'bg-purple-100 text-purple-700' :
+                              record.source === 'kb' ? 'bg-green-100 text-green-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {record.source === 'ai' ? 'AI' : record.source === 'kb' ? '知识库' : record.source}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-amber-600">
+                            {record.response_time ? (record.response_time / 1000).toFixed(2) + 's' : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {!perfStats.today?.total_replies && !perfStats.summary?.total_replies && (
+              <div className="py-8 text-center text-gray-400">
+                <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>暂无性能数据</p>
+                <p className="text-sm mt-1">系统运行后将自动采集回复性能数据</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-8 text-center text-gray-400">
+            <Activity className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p>加载性能数据失败</p>
+            <button onClick={loadPerfStats} className="mt-2 text-amber-500 hover:underline text-sm">点击重试</button>
+          </div>
+        )}
       </div>
 
       {/* Main Chart Section */}
@@ -661,6 +833,8 @@ const Dashboard: React.FC = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-4 pr-4 py-2 rounded-xl bg-white border border-gray-100 text-sm focus:border-yellow-400 outline-none w-48"
                 type="text"
+                aria-label="搜索订单号/商品/买家"
+                inputMode="search"
               />
             </div>
           </div>
@@ -722,7 +896,7 @@ const Dashboard: React.FC = () => {
                           ¥{order.amount || '0.00'}
                         </td>
                         <td className="px-6 py-4">
-                          <StatusBadge status={order.status || order.order_status || 'unknown'} />
+                          <OrderStatusBadge status={(order.status || order.order_status || 'processing') as OrderStatus} />
                         </td>
                         <td className="px-6 py-4 text-right">
                           <a

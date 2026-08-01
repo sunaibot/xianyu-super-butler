@@ -71,6 +71,7 @@ export interface Order {
   quantity: number;
   amount: string;
   status: OrderStatus;
+  order_status?: string;
   receiver_name?: string;
   receiver_phone?: string;
   receiver_address?: string;
@@ -105,6 +106,12 @@ export interface Card {
   is_multi_spec?: boolean;
   spec_name?: string;
   spec_value?: string;
+  // 编辑表单使用的扁平字段
+  api_url?: string;
+  api_method?: 'GET' | 'POST';
+  api_timeout?: number;
+  api_headers?: string;
+  api_params?: string;
   created_at: string;
   updated_at: string;
 }
@@ -116,9 +123,10 @@ export interface Item {
   item_id: string;
   item_title?: string;
   item_price?: string;
-  item_image?: string; // Inferred from common usage, though not explicitly in list model sometimes
+  item_image?: string;
   item_category?: string;
   is_multi_spec?: number | boolean;
+  is_multi_qty_ship?: number | boolean;
   created_at?: string;
 }
 
@@ -149,6 +157,7 @@ export interface AdminStats {
   total_cards: number;
   total_keywords: number;
   total_orders: number;
+  is_admin?: boolean;
 }
 
 export interface OrderAnalytics {
@@ -156,7 +165,7 @@ export interface OrderAnalytics {
     total_amount: number;
     total_orders: number;
   };
-  daily_stats: Array<{ date: string; amount: number }>;
+  daily_stats: Array<{ date: string; amount: number; order_count?: number }>;
   item_stats?: Array<{
     item_id: string;
     order_count: number;
@@ -178,9 +187,9 @@ export interface SystemSettings {
 
 export interface AIReplySettings {
   ai_enabled: boolean;
-  model_name: string;
-  api_key: string;
-  base_url: string;
+  model_name?: string;
+  api_key?: string;
+  base_url?: string;
   max_discount_percent: number;
   max_discount_amount?: number;
   max_bargain_rounds: number;
@@ -205,4 +214,78 @@ export interface UserInfo {
   created_at?: string;
   last_login?: string;
   status?: 'active' | 'disabled';
+}
+
+// Forbidden Words
+export interface ForbiddenCheckResult {
+  has_forbidden: boolean;
+  found_words: string[];
+  suggestions?: Record<string, string>;
+  original_text?: string;
+  cleaned_text?: string;
+}
+
+// Product Extraction
+export interface ProductExtractionResult {
+  success: boolean;
+  product?: {
+    title: string;
+    price: string;
+    images: string[];
+    description: string;
+    category: string;
+  };
+  message?: string;
+}
+
+// Product Publishing
+export interface ProductPublishResult {
+  success: boolean;
+  message?: string;
+  product_url?: string;
+}
+
+// Product Dedup
+export interface ProductDedupResult {
+  total_input: number;
+  duplicate_count: number;
+  unique_count: number;
+  duplicates: Array<{
+    index1: number;
+    index2: number;
+    similarity: number;
+    reason: string;
+  }>;
+  unique_indices: number[];
+}
+
+// Performance Monitor
+export interface PerformanceStats {
+  today: {
+    total_replies: number;
+    ai_replies: number;
+    kb_matches: number;
+    avg_response_time: number;
+    avg_ai_time: number;
+    min_response_time: number;
+    max_response_time: number;
+  };
+  summary: {
+    total_replies: number;
+    ai_replies: number;
+    kb_matches: number;
+    avg_response_time: number;
+    min_response_time: number;
+    max_response_time: number;
+  };
+  recent: Array<{
+    timestamp: string;
+    intent: string;
+    source: string;
+    response_time: number;
+  }>;
+  provider_comparison?: Record<string, {
+    count: number;
+    avg_time: number;
+  }>;
 }

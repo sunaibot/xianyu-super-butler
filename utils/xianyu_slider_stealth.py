@@ -1827,6 +1827,27 @@ class XianyuSliderStealth:
                                     break
                         except:
                             continue
+
+                    # 关键修复：点击 frame 激活后，旧 slider_button 引用可能已失效
+                    # （bounding_box() 返回 None），必须重新查找按钮
+                    if slider_track:
+                        refreshed_button = None
+                        for btn_selector in button_selectors:
+                            try:
+                                btn_el = track_search_frame.query_selector(btn_selector)
+                                if btn_el:
+                                    try:
+                                        if btn_el.is_visible():
+                                            refreshed_button = btn_el
+                                            logger.info(f"【{self.pure_user_id}】点击frame后重新获取滑块按钮: {btn_selector}")
+                                            break
+                                    except:
+                                        refreshed_button = btn_el
+                                        break
+                            except:
+                                continue
+                        if refreshed_button:
+                            slider_button = refreshed_button
                 except Exception as e:
                     logger.debug(f"【{self.pure_user_id}】点击frame后查找轨道时出错: {e}")
                 

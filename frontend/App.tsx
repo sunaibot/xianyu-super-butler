@@ -1,10 +1,15 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react';
-import Sidebar from './components/Sidebar';
+import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
-import { WebSocketProvider, useWebSocketContext } from './contexts/WebSocketContext';
+import { WebSocketProvider } from './contexts/WebSocketContext';
+import { NavigateProvider, useNavigate } from './contexts/NavigateContext';
+import AppShell from './components/layout/AppShell';
+import CommandPalette, { useCommandPaletteHotkey } from './components/layout/CommandPalette';
+import ConfirmDialog from './components/ui/ConfirmDialog';
+import NotificationCenter from './components/NotificationCenter';
 import { login, verifySession } from './services/api';
-import { ShieldCheck, ArrowRight, Loader2, User, Lock, TerminalSquare, Wifi, WifiOff, Compass } from 'lucide-react';
+import { ShieldCheck, ArrowRight, Loader2, User, Lock, TerminalSquare, Compass, PackagePlus, RefreshCw } from 'lucide-react';
+import type { TabId } from './contexts/NavigateContext';
 
 // 路由级懒加载，减小首屏 bundle 体积
 const Dashboard = lazy(() => import('./components/Dashboard'));
@@ -16,6 +21,7 @@ const Settings = lazy(() => import('./components/Settings'));
 const Keywords = lazy(() => import('./components/Keywords'));
 const Rules = lazy(() => import('./components/Rules'));
 const Users = lazy(() => import('./components/Users'));
+const KnowledgeBase = lazy(() => import('./components/KnowledgeBase'));
 
 // 页面加载占位组件
 const PageLoading: React.FC = () => (
@@ -43,13 +49,19 @@ const NotFoundPage: React.FC = () => (
 
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [needsInit, setNeedsInit] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  // ⌘K / Ctrl+K 全局唤起 Command Palette
+  const toggleCmd = useCallback(() => setCmdOpen(v => !v), []);
+  useCommandPaletteHotkey(toggleCmd);
 
   // Check auth on mount
   useEffect(() => {
@@ -164,9 +176,11 @@ const App: React.FC = () => {
             <div className="space-y-4">
                 <div className="relative group">
                     <User className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-black transition-colors" />
-                    <input 
-                        type="text" 
-                        placeholder="管理员账号" 
+                    <input
+                        type="text"
+                        placeholder="管理员账号"
+                        aria-label="管理员账号"
+                        autoComplete="username"
                         value={username}
                         onChange={e => setUsername(e.target.value)}
                         className="w-full ios-input pl-14 pr-6 py-4.5 rounded-2xl text-base h-14"
@@ -174,9 +188,11 @@ const App: React.FC = () => {
                 </div>
                 <div className="relative group">
                     <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 group-focus-within:text-black transition-colors" />
-                    <input 
-                        type="password" 
-                        placeholder="密码" 
+                    <input
+                        type="password"
+                        placeholder="密码"
+                        aria-label="密码"
+                        autoComplete="current-password"
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         className="w-full ios-input pl-14 pr-6 py-4.5 rounded-2xl text-base h-14"
@@ -220,6 +236,7 @@ const App: React.FC = () => {
       case 'cards': return <CardList />;
       case 'items': return <ItemList />;
       case 'keywords': return <Keywords />;
+      case 'kb': return <KnowledgeBase />;
       case 'rules': return <Rules />;
       case 'users': return <Users />;
       case 'settings': return <Settings />;
@@ -227,54 +244,42 @@ const App: React.FC = () => {
     }
   };
 
-  // WS Status Indicator (inner component)
-  const WSStatusBar: React.FC = () => {
-    const { connected } = useWebSocketContext();
-    return (
-      <div className="fixed top-4 right-4 z-[100] flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-xl shadow-md border border-gray-200 text-xs font-medium">
-        {connected ? (
-          <>
-            <Wifi className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-green-700">实时连接</span>
-          </>
-        ) : (
-          <>
-            <WifiOff className="w-3.5 h-3.5 text-gray-400 animate-pulse" />
-            <span className="text-gray-500">连接中...</span>
-          </>
-        )}
-      </div>
-    );
-  };
+  // 快捷操作（阶段 D6 可扩展）
+  const cmdActions = [
+    { id: 'publish-item', label: '发布新商品', icon: PackagePlus, hint: '操作', run: () => { setActiveTab('items'); setCmdOpen(false); } },
+    { id: 'sync-orders', label: '同步订单', icon: RefreshCw, hint: '操作', run: () => { setActiveTab('orders'); setCmdOpen(false); } },
+  ];
 
   return (
     <ErrorBoundary>
     <ToastProvider>
     <WebSocketProvider>
-    <div className="flex min-h-screen bg-[#F4F5F7] text-[#111]">
-      <Sidebar
+    <NavigateProvider activeTab={activeTab} setActiveTab={setActiveTab}>
+      <AppShell
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        onLogout={() => {
-            setIsLoggedIn(false);
-        }}
+        onLogout={() => setIsLoggedIn(false)}
+        onOpenSearch={() => setCmdOpen(true)}
+        onOpenNotifications={() => setNotifOpen(true)}
+      >
+        <ErrorBoundary key={activeTab}>
+          <Suspense fallback={<PageLoading />}>
+            {renderContent()}
+          </Suspense>
+        </ErrorBoundary>
+      </AppShell>
+
+      <CommandPalette
+        isOpen={cmdOpen}
+        onClose={() => setCmdOpen(false)}
+        setActiveTab={setActiveTab}
+        actions={cmdActions}
       />
 
-      <main className="flex-1 ml-64 p-8 md:p-12 overflow-y-auto h-screen relative scroll-smooth">
-        {/* Subtle background decoration */}
-        <div className="fixed top-0 right-0 w-[800px] h-[800px] bg-gradient-to-bl from-yellow-50 to-transparent rounded-full blur-[120px] pointer-events-none -z-10 opacity-60"></div>
+      <ConfirmDialog />
 
-        <WSStatusBar />
-
-        <div className="max-w-[1400px] mx-auto pb-10">
-            <ErrorBoundary>
-              <Suspense fallback={<PageLoading />}>
-                {renderContent()}
-              </Suspense>
-            </ErrorBoundary>
-        </div>
-      </main>
-    </div>
+      <NotificationCenter isOpen={notifOpen} onClose={() => setNotifOpen(false)} />
+    </NavigateProvider>
     </WebSocketProvider>
     </ToastProvider>
     </ErrorBoundary>

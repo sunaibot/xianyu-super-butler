@@ -1,23 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { getSystemSettings, updateSystemSettings, testWebhook } from '../services/api';
-import { SystemSettings } from '../types';
+import { getSystemSettings, updateSystemSettings, testWebhook, checkForbiddenWords, cleanForbiddenWords } from '../services/api';
+import { SystemSettings, ForbiddenCheckResult } from '../types';
 import {
   Bot, Save, Lock, Sparkles, Mail, Settings as SettingsIcon,
   Eye, EyeOff, RefreshCw, Database, ToggleLeft, ToggleRight, CheckCircle,
-  Webhook, Send, Zap
+  Webhook, Send, Zap, Shield, AlertTriangle, Search, Sparkles as SparklesIcon
 } from 'lucide-react';
-
-interface Toast {
-  id: number;
-  type: 'success' | 'error';
-  message: string;
-}
+import { useToast } from './Toast';
 
 const Settings: React.FC = () => {
   const [settings, setSettings] = useState<SystemSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { showToast } = useToast();
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -25,11 +20,10 @@ const Settings: React.FC = () => {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showSmtpPassword, setShowSmtpPassword] = useState(false);
 
-  const showToast = (type: 'success' | 'error', message: string) => {
-    const id = Date.now();
-    setToasts(prev => [...prev, { id, type, message }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
-  };
+  // Forbidden words states
+  const [forbiddenText, setForbiddenText] = useState('');
+  const [forbiddenResult, setForbiddenResult] = useState<ForbiddenCheckResult | null>(null);
+  const [forbiddenLoading, setForbiddenLoading] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -86,6 +80,49 @@ const Settings: React.FC = () => {
         ? currentEvents.filter((e: string) => e !== eventType)
         : [...currentEvents, eventType];
       setSettings({ ...settings, webhook_events: updated.join(',') });
+  };
+
+  const handleCheckForbidden = async () => {
+    if (!forbiddenText.trim()) {
+      showToast('error', '请输入要检测的文本');
+      return;
+    }
+    setForbiddenLoading(true);
+    try {
+      const result = await checkForbiddenWords(forbiddenText);
+      setForbiddenResult(result);
+      if (result.has_forbidden) {
+        showToast('error', `检测到 ${result.found_words.length} 个违禁词`);
+      } else {
+        showToast('success', '未检测到违禁词');
+      }
+    } catch (e) {
+      showToast('error', '检测失败: ' + (e as Error).message);
+    } finally {
+      setForbiddenLoading(false);
+    }
+  };
+
+  const handleCleanForbidden = async () => {
+    if (!forbiddenText.trim()) {
+      showToast('error', '请输入要清理的文本');
+      return;
+    }
+    setForbiddenLoading(true);
+    try {
+      const result = await cleanForbiddenWords(forbiddenText);
+      setForbiddenResult(result);
+      if (result.cleaned_text) {
+        setForbiddenText(result.cleaned_text);
+        showToast('success', '违禁词已清理并替换');
+      } else {
+        showToast('success', '文本无需清理');
+      }
+    } catch (e) {
+      showToast('error', '清理失败: ' + (e as Error).message);
+    } finally {
+      setForbiddenLoading(false);
+    }
   };
 
   if (!settings) return <div className="p-8 text-center text-gray-400">加载配置中...</div>;
@@ -205,6 +242,8 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">商品同步间隔（分钟）</label>
                 <input
                   type="number"
+                  aria-label="商品同步间隔（分钟）"
+                  inputMode="numeric"
                   value={Math.round((settings.item_sync_interval || 600) / 60)}
                   onChange={(e) => {
                     const minutes = parseInt(e.target.value) || 10;
@@ -221,6 +260,8 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">每次最多同步页数</label>
                 <input
                   type="number"
+                  aria-label="每次最多同步页数"
+                  inputMode="numeric"
                   value={settings.item_sync_max_pages || 5}
                   onChange={(e) => setSettings({...settings, item_sync_max_pages: parseInt(e.target.value) || 5})}
                   className="w-full ios-input px-4 py-3 rounded-xl"
@@ -246,6 +287,8 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">API 地址</label>
                 <input
                   type="text"
+                  aria-label="API地址"
+                  inputMode="url"
                   value={settings.ai_api_url || 'https://dashscope.aliyuncs.com/compatible-mode/v1'}
                   onChange={e => setSettings({...settings, ai_api_url: e.target.value})}
                   className="w-full ios-input px-4 py-3 rounded-xl text-sm"
@@ -259,6 +302,7 @@ const Settings: React.FC = () => {
                 <div className="relative">
                   <input
                     type={showApiKey ? 'text' : 'password'}
+                    aria-label="API Key"
                     value={settings.ai_api_key || ''}
                     onChange={e => setSettings({...settings, ai_api_key: e.target.value})}
                     className="w-full ios-input px-4 py-3 pr-12 rounded-xl font-mono text-sm"
@@ -328,6 +372,7 @@ const Settings: React.FC = () => {
                   <label className="block text-sm font-bold text-gray-800">SMTP服务器</label>
                   <input
                     type="text"
+                    aria-label="SMTP服务器"
                     value={settings.smtp_server || ''}
                     onChange={e => setSettings({...settings, smtp_server: e.target.value})}
                     placeholder="smtp.qq.com"
@@ -338,6 +383,8 @@ const Settings: React.FC = () => {
                   <label className="block text-sm font-bold text-gray-800">SMTP端口</label>
                   <input
                     type="number"
+                    aria-label="SMTP端口"
+                    inputMode="numeric"
                     value={settings.smtp_port || 587}
                     onChange={e => setSettings({...settings, smtp_port: parseInt(e.target.value)})}
                     placeholder="587"
@@ -350,6 +397,8 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">发件邮箱</label>
                 <input
                   type="email"
+                  aria-label="发件邮箱"
+                  inputMode="email"
                   value={settings.smtp_user || ''}
                   onChange={e => setSettings({...settings, smtp_user: e.target.value})}
                   placeholder="your-email@qq.com"
@@ -362,6 +411,7 @@ const Settings: React.FC = () => {
                 <div className="relative">
                   <input
                     type={showSmtpPassword ? 'text' : 'password'}
+                    aria-label="邮箱密码/授权码"
                     value={settings.smtp_password || ''}
                     onChange={e => setSettings({...settings, smtp_password: e.target.value})}
                     placeholder="输入密码或授权码"
@@ -382,6 +432,7 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">发件人显示名（可选）</label>
                 <input
                   type="text"
+                  aria-label="发件人显示名"
                   value={settings.smtp_from || ''}
                   onChange={e => setSettings({...settings, smtp_from: e.target.value})}
                   placeholder="闲鱼自动回复系统"
@@ -427,6 +478,8 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">Webhook URL</label>
                 <input
                   type="url"
+                  aria-label="Webhook URL"
+                  inputMode="url"
                   value={settings.webhook_url || ''}
                   onChange={e => setSettings({...settings, webhook_url: e.target.value})}
                   placeholder="https://your-n8n.example.com/webhook/xxx"
@@ -439,6 +492,7 @@ const Settings: React.FC = () => {
                 <label className="block text-sm font-bold text-gray-800">签名密钥（可选）</label>
                 <input
                   type="text"
+                  aria-label="签名密钥"
                   value={settings.webhook_secret || ''}
                   onChange={e => setSettings({...settings, webhook_secret: e.target.value})}
                   placeholder="留空则不签名"
@@ -516,6 +570,99 @@ const Settings: React.FC = () => {
               </div>
             </div>
           </section>
+
+          {/* Forbidden Words Checker */}
+          <section className="space-y-4">
+            <h3 className="text-lg font-extrabold text-gray-800 flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-red-100 text-red-600">
+                    <Shield className="w-4 h-4" />
+                </div>
+                违禁词检测
+            </h3>
+
+            <div className="ios-card rounded-[2rem] p-6 bg-white space-y-4">
+              <p className="text-sm text-gray-500">检测商品标题、描述等文本中的违禁词，并提供清理替换功能</p>
+
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-gray-800">输入文本</label>
+                <textarea
+                  className="w-full ios-input px-4 py-3 rounded-xl min-h-[120px] text-sm resize-none"
+                  value={forbiddenText}
+                  onChange={e => setForbiddenText(e.target.value)}
+                  placeholder="输入要检测的文本，如商品标题、描述等..."
+                ></textarea>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleCheckForbidden}
+                  disabled={forbiddenLoading || !forbiddenText.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl font-bold text-sm hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Search className="w-4 h-4" />
+                  {forbiddenLoading ? '检测中...' : '检测违禁词'}
+                </button>
+                <button
+                  onClick={handleCleanForbidden}
+                  disabled={forbiddenLoading || !forbiddenText.trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-500 text-white rounded-xl font-bold text-sm hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <SparklesIcon className="w-4 h-4" />
+                  一键清理替换
+                </button>
+              </div>
+
+              {forbiddenResult && (
+                <div className="space-y-3">
+                  <div className={`p-4 rounded-xl text-sm ${
+                    forbiddenResult.has_forbidden
+                      ? 'bg-red-50 text-red-700 border border-red-200'
+                      : 'bg-green-50 text-green-700 border border-green-200'
+                  }`}>
+                    <div className="font-bold mb-1 flex items-center gap-2">
+                      {forbiddenResult.has_forbidden ? (
+                        <><AlertTriangle className="w-4 h-4" /> 检测到违禁词</>
+                      ) : (
+                        <><CheckCircle className="w-4 h-4" /> 文本安全</>
+                      )}
+                    </div>
+                    {forbiddenResult.has_forbidden && (
+                      <>
+                        <div className="text-xs mt-2">
+                          <strong>发现的违禁词:</strong> {forbiddenResult.found_words.join(', ')}
+                        </div>
+                        {forbiddenResult.suggestions && Object.keys(forbiddenResult.suggestions).length > 0 && (
+                          <div className="text-xs mt-2">
+                            <strong>建议替换:</strong>
+                            <ul className="list-disc list-inside mt-1">
+                              {Object.entries(forbiddenResult.suggestions).map(([word, suggestion]) => (
+                                <li key={word}>"{word}" → "{suggestion}"</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {forbiddenResult.cleaned_text && forbiddenResult.cleaned_text !== forbiddenResult.original_text && (
+                    <div className="p-4 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 text-sm">
+                      <div className="font-bold mb-1">清理后文本:</div>
+                      <div className="text-xs whitespace-pre-wrap">{forbiddenResult.cleaned_text}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="p-3 bg-amber-50 rounded-xl text-xs text-amber-700">
+                <strong>💡 使用提示:</strong>
+                <ul className="list-disc list-inside space-y-0.5 mt-1">
+                  <li>商品发布前建议先进行违禁词检测</li>
+                  <li>支持一键替换为合规表达</li>
+                  <li>检测结果仅供参考，请人工确认</li>
+                </ul>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
@@ -530,22 +677,6 @@ const Settings: React.FC = () => {
             {saving ? '保存中...' : '保存所有配置'}
         </button>
       </div>
-
-      {toasts.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
-          {toasts.map(toast => (
-            <div
-              key={toast.id}
-              className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 ${
-                toast.type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-              }`}
-            >
-              {toast.type === 'success' && <CheckCircle className="w-5 h-5" />}
-              <span className="font-medium">{toast.message}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 };

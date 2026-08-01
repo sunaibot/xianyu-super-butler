@@ -13,12 +13,17 @@ import os
 import json
 import time
 import sqlite3
-import requests  # 确保已导入
+import requests
 import threading
 from typing import List, Dict, Optional
 from loguru import logger
 from openai import OpenAI
 from db_manager import db_manager
+from services.performance_monitor import get_performance_monitor
+
+
+# 使用单例工厂，确保与 reply_server 共享同一实例
+perf_monitor = get_performance_monitor()
 
 
 class AIReplyEngine:
@@ -295,13 +300,13 @@ class AIReplyEngine:
         """生成AI回复"""
         if not self.is_ai_enabled(cookie_id):
             return None
+
+        perf_monitor.start_reply_timer(user_id, message)
         
         try:
-            # 先检测意图（用于后续保存）
             intent = self.detect_intent(message, cookie_id)
             logger.info(f"检测到意图: {intent} (账号: {cookie_id})")
             
-            # 在锁外先保存用户消息到数据库，让所有消息都能立即保存
             message_created_at = self.save_conversation(chat_id, cookie_id, user_id, item_id, "user", message, intent)
             
             # 如果调用方已经实现了去抖（debounce），可以通过 skip_wait=True 跳过内部等待
@@ -349,11 +354,52 @@ class AIReplyEngine:
                         logger.info(f"议价次数已达上限 ({bargain_count}/{max_bargain_rounds})，拒绝继续议价")
                         refuse_reply = f"抱歉，这个价格已经是最优惠的了，不能再便宜了哦！"
                         self.save_conversation(chat_id, cookie_id, user_id, item_id, "assistant", refuse_reply, intent)
+                        perf_monitor.end_reply_timer(refuse_reply, intent, "bargain_limit")
                         return refuse_reply
+
+                # 5.5 知识库检索: 先从本地话术库查找相关回复（关键词匹配，节省API调用）
+                kb_results = []
+                kb_reply = None
+                try:
+                    from knowledge_base_service import get_kb_service
+                    kb = get_kb_service()
+                    search_query = message
+                    if context:
+                        last_user_msg = next((m['content'] for m in reversed(context) if m['role'] == 'user'), message)
+                        search_query = last_user_msg or message
+                    
+                    kb_results = kb.search(search_query, n_results=5)
+                    if kb_results:
+                        best = kb_results[0]
+                        similarity = best.get('similarity', 0)
+                        logger.info(f"知识库检索: 最佳匹配相似度={similarity}%, 问题='{best.get('document', '')[:30]}'")
+                        
+                        if similarity >= 70:
+                            kb_reply = best.get('metadata', {}).get('answer', '')
+                            logger.info(f"✅ 知识库命中 (相似度={similarity}%), 直接返回话术回复")
+                            self.save_conversation(chat_id, cookie_id, user_id, item_id, "assistant", kb_reply, intent)
+                            perf_monitor.end_reply_timer(kb_reply, intent, "knowledge_base")
+                            return kb_reply
+                except Exception as e:
+                    logger.warning(f"知识库检索失败，跳过: {e}")
+                    kb_results = []
 
                 # 6. 构建提示词
                 custom_prompts = json.loads(settings['custom_prompts']) if settings['custom_prompts'] else {}
                 system_prompt = custom_prompts.get(intent, self.default_prompts[intent])
+
+                # 6.5 如果有知识库结果(但未直接命中)，附加到 system prompt 作为参考
+                if kb_results and not kb_reply:
+                    kb_refs = []
+                    for i, r in enumerate(kb_results[:3]):
+                        q = r.get('document', '')
+                        a = r.get('metadata', {}).get('answer', '')
+                        sim = r.get('similarity', 0)
+                        if sim >= 45:
+                            kb_refs.append(f"参考#{i+1}(相似度{sim}%): 问:{q[:50]} 答:{a[:80]}")
+                    if kb_refs:
+                        system_prompt += "\n\n【知识库参考】\n" + "\n".join(kb_refs)
+                        logger.info(f"已附加 {len(kb_refs)} 条知识库参考到 system prompt")
 
                 # 7. 构建商品信息
                 item_desc = f"商品标题: {item_info.get('title', '未知')}\n"
@@ -390,7 +436,9 @@ class AIReplyEngine:
                     {"role": "user", "content": user_prompt}
                 ]
 
-                reply = None # 初始化 reply 变量
+                reply = None
+
+                perf_monitor.mark_ai_start()
 
                 if self._is_dashscope_api(settings):
                     logger.info(f"使用DashScope API生成回复")
@@ -402,12 +450,14 @@ class AIReplyEngine:
                 
                 else:
                     logger.info(f"使用OpenAI兼容API生成回复")
-                    # 修复 P0-2: 调用已修改的无状态客户端创建方法
                     client = self._create_openai_client(cookie_id)
                     if not client:
+                        perf_monitor.end_reply_timer("", intent, settings.get('model_name', 'unknown'))
                         return None
                     logger.info(f"messages:{messages}")
                     reply = self._call_openai_api(client, settings, messages, max_tokens=100, temperature=0.7)
+
+                perf_monitor.mark_ai_end()
 
                 # 11. 保存AI回复到对话记录
                 self.save_conversation(chat_id, cookie_id, user_id, item_id, "assistant", reply, intent)
@@ -418,10 +468,12 @@ class AIReplyEngine:
                     pass
                 
                 logger.info(f"AI回复生成成功 (账号: {cookie_id}): {reply}")
+                perf_monitor.end_reply_timer(reply, intent, settings.get('model_name', 'unknown'))
                 return reply
                 
         except Exception as e:
             logger.error(f"AI回复生成失败 {cookie_id}: {e}")
+            perf_monitor.end_reply_timer("", "error", "")
             if hasattr(e, 'response') and hasattr(e.response, 'url'):
                 logger.error(f"请求URL: {e.response.url}")
             if hasattr(e, 'request') and hasattr(e.request, 'url'):

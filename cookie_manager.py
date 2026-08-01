@@ -75,7 +75,7 @@ class CookieManager:
             try:
                 import sys
                 sys.stdout.flush()
-            except:
+            except Exception:
                 pass
             
             await live.main()
@@ -88,7 +88,7 @@ class CookieManager:
             try:
                 import sys
                 sys.stdout.flush()
-            except:
+            except Exception:
                 pass
         except Exception as e:
             logger.error(f"【{cookie_id}】XianyuLive 任务异常: {e}")
@@ -98,7 +98,7 @@ class CookieManager:
             try:
                 import sys
                 sys.stdout.flush()
-            except:
+            except Exception:
                 pass
         finally:
             logger.info(f"【{cookie_id}】_run_xianyu方法执行结束")
@@ -106,7 +106,7 @@ class CookieManager:
             try:
                 import sys
                 sys.stdout.flush()
-            except:
+            except Exception:
                 pass
 
     async def _add_cookie_async(self, cookie_id: str, cookie_value: str, user_id: int = None):

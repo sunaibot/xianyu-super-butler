@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AccountDetail, ShippingRule, ReplyRule, DefaultReply } from '../types';
+import { useToast } from './Toast';
+import { useConfirm } from '../hooks/useConfirm';
+import Modal from './ui/Modal';
 import { getAccountDetails, getReplyRules, updateReplyRule, deleteReplyRule, getShippingRules, updateShippingRule, deleteShippingRule, getCards, getDefaultReplies, getDefaultReply, updateDefaultReply, deleteDefaultReply, clearDefaultReplyRecords } from '../services/api';
-import { Plus, Trash2, MessageSquare, X, Save, Loader2, Key, Truck, Power, PowerOff, Edit2, RefreshCw, Sparkles, Bot } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Save, Loader2, Key, Truck, Power, PowerOff, Edit2, RefreshCw, Sparkles, Bot } from 'lucide-react';
 
 type TabType = 'reply' | 'delivery' | 'default';
 
@@ -30,6 +32,8 @@ interface DefaultReplyForm {
 }
 
 const Keywords: React.FC = () => {
+  const { showToast } = useToast();
+  const confirm = useConfirm();
   const [accounts, setAccounts] = useState<AccountDetail[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<string>('');
   const [activeTab, setActiveTab] = useState<TabType>('reply');
@@ -195,11 +199,11 @@ const Keywords: React.FC = () => {
 
   const handleSave = async () => {
     if (!selectedAccount) {
-      alert('请先选择账号');
+      showToast('info', '请先选择账号');
       return;
     }
     if (!replyForm.keyword.trim() || !replyForm.reply_content.trim()) {
-      alert('请填写关键词和回复内容');
+      showToast('info', '请填写关键词和回复内容');
       return;
     }
 
@@ -216,19 +220,19 @@ const Keywords: React.FC = () => {
       );
       setShowReplyModal(false);
       loadKeywords();
-      alert('保存成功！');
+      showToast('success', '保存成功');
     } catch (e) {
-      alert('保存失败：' + (e as Error).message);
+      showToast('error', '保存失败，请重试');
     }
   };
 
   const handleSaveDelivery = async () => {
     if (!deliveryForm.keyword.trim()) {
-      alert('请填写触发关键词');
+      showToast('info', '请填写触发关键词');
       return;
     }
     if (!deliveryForm.card_id) {
-      alert('请选择卡券');
+      showToast('info', '请选择卡券');
       return;
     }
 
@@ -243,31 +247,31 @@ const Keywords: React.FC = () => {
       });
       setShowDeliveryModal(false);
       loadShippingRules();
-      alert('保存成功！');
+      showToast('success', '保存成功');
     } catch (e) {
-      alert('保存失败：' + (e as Error).message);
+      showToast('error', '保存失败，请重试');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!selectedAccount || !confirm('确认删除该关键词吗？')) return;
+    if (!selectedAccount || !(await confirm({ title: '确认删除关键词', content: '确认删除该关键词吗？此操作不可恢复。', variant: 'danger' }))) return;
     try {
       await deleteReplyRule(id, selectedAccount);
       loadKeywords();
-      alert('删除成功！');
+      showToast('success', '删除成功');
     } catch (e) {
-      alert('删除失败：' + (e as Error).message);
+      showToast('error', '删除失败，请重试');
     }
   };
 
   const handleDeleteDelivery = async (id: string) => {
-    if (!confirm('确认删除该发货规则吗？')) return;
+    if (!(await confirm({ title: '确认删除发货规则', content: '确认删除该发货规则吗？此操作不可恢复。', variant: 'danger' }))) return;
     try {
       await deleteShippingRule(id);
       loadShippingRules();
-      alert('删除成功！');
+      showToast('success', '删除成功');
     } catch (e) {
-      alert('删除失败：' + (e as Error).message);
+      showToast('error', '删除失败，请重试');
     }
   };
 
@@ -283,13 +287,13 @@ const Keywords: React.FC = () => {
       });
       loadShippingRules();
     } catch (e) {
-      alert('操作失败：' + (e as Error).message);
+      showToast('error', '操作失败，请重试');
     }
   };
 
   const handleSaveDefault = async () => {
     if (!defaultForm.cookie_id) {
-      alert('请先选择账号');
+      showToast('info', '请先选择账号');
       return;
     }
 
@@ -302,30 +306,30 @@ const Keywords: React.FC = () => {
       });
       setShowDefaultModal(false);
       loadDefaultReplies();
-      alert('保存成功！');
+      showToast('success', '保存成功');
     } catch (e) {
-      alert('保存失败：' + (e as Error).message);
+      showToast('error', '保存失败，请重试');
     }
   };
 
   const handleDeleteDefault = async (cookieId: string) => {
-    if (!confirm('确认删除该默认回复吗？')) return;
+    if (!(await confirm({ title: '确认删除默认回复', content: '确认删除该默认回复吗？此操作不可恢复。', variant: 'danger' }))) return;
     try {
       await deleteDefaultReply(cookieId);
       loadDefaultReplies();
-      alert('删除成功！');
+      showToast('success', '删除成功');
     } catch (e) {
-      alert('删除失败：' + (e as Error).message);
+      showToast('error', '删除失败，请重试');
     }
   };
 
   const handleClearRecords = async (cookieId: string) => {
-    if (!confirm('确认清空该账号的回复记录吗？清空后可以重新对所有对话使用默认回复。')) return;
+    if (!(await confirm({ title: '确认清空回复记录', content: '确认清空该账号的回复记录吗？清空后可以重新对所有对话使用默认回复。', variant: 'danger' }))) return;
     try {
       await clearDefaultReplyRecords(cookieId);
-      alert('清空成功！');
+      showToast('success', '清空成功');
     } catch (e) {
-      alert('清空失败：' + (e as Error).message);
+      showToast('error', '清空失败，请重试');
     }
   };
 
@@ -698,343 +702,312 @@ const Keywords: React.FC = () => {
       ) : null}
 
       {/* 关键词回复弹窗 */}
-      {showReplyModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden animate-scale-in">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-[#FFE815] to-[#FFD700] p-8">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-white/30 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <MessageSquare className="w-7 h-7 text-gray-900" />
-                  </div>
-                  <h3 className="text-3xl font-black text-gray-900">
-                    {editingKeyword ? '编辑关键词' : '添加关键词'}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowReplyModal(false)}
-                  className="p-3 bg-white/30 backdrop-blur-sm rounded-2xl hover:bg-white/40 transition-colors"
-                >
-                  <X className="w-6 h-6 text-gray-900" />
-                </button>
+      {showReplyModal && (
+        <Modal
+          isOpen={showReplyModal}
+          onClose={() => setShowReplyModal(false)}
+          title={
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/30 backdrop-blur-sm rounded-2xl flex items-center justify-center">
+                <MessageSquare className="w-7 h-7 text-gray-900" />
               </div>
+              <h3 className="text-3xl font-black text-gray-900">
+                {editingKeyword ? '编辑关键词' : '添加关键词'}
+              </h3>
+            </div>
+          }
+          size="md"
+          footer={
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowReplyModal(false)}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSave}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-[#FFE815] to-[#FFD700] hover:from-[#FFD700] hover:to-[#FFC800] text-gray-900 shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                保存关键词
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <Key className="w-5 h-5 text-[#FFE815]" />
+                触发关键词
+              </label>
+              <input
+                type="text"
+                aria-label="触发关键词"
+                value={replyForm.keyword}
+                onChange={(e) => setReplyForm({ ...replyForm, keyword: e.target.value })}
+                placeholder="例如：价格、包邮、怎么样"
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-[#FFE815] focus:ring-4 focus:ring-[#FFE815]/20 transition-all bg-gray-50"
+              />
+              <p className="text-sm text-gray-500 mt-2 ml-1">💡 买家消息中包含此关键词时自动回复</p>
             </div>
 
-            {/* Body */}
-            <div className="p-8 space-y-6 overflow-y-auto max-h-[60vh]">
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <Key className="w-5 h-5 text-[#FFE815]" />
-                  触发关键词
-                </label>
-                <input
-                  type="text"
-                  value={replyForm.keyword}
-                  onChange={(e) => setReplyForm({ ...replyForm, keyword: e.target.value })}
-                  placeholder="例如：价格、包邮、怎么样"
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-[#FFE815] focus:ring-4 focus:ring-[#FFE815]/20 transition-all bg-gray-50"
-                />
-                <p className="text-sm text-gray-500 mt-2 ml-1">💡 买家消息中包含此关键词时自动回复</p>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <MessageSquare className="w-5 h-5 text-[#FFE815]" />
-                  回复内容
-                </label>
-                <textarea
-                  value={replyForm.reply_content}
-                  onChange={(e) => setReplyForm({ ...replyForm, reply_content: e.target.value })}
-                  placeholder="输入自动回复的内容..."
-                  rows={6}
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-[#FFE815] focus:ring-4 focus:ring-[#FFE815]/20 transition-all bg-gray-50 resize-none"
-                />
-                <p className="text-sm text-gray-500 mt-2 ml-1">💬 支持换行，系统将自动发送此内容给买家</p>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-8 bg-gray-50 border-t border-gray-100">
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setShowReplyModal(false)}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSave}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-[#FFE815] to-[#FFD700] hover:from-[#FFD700] hover:to-[#FFC800] text-gray-900 shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
-                >
-                  <Save className="w-5 h-5" />
-                  保存关键词
-                </button>
-              </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <MessageSquare className="w-5 h-5 text-[#FFE815]" />
+                回复内容
+              </label>
+              <textarea
+                value={replyForm.reply_content}
+                onChange={(e) => setReplyForm({ ...replyForm, reply_content: e.target.value })}
+                placeholder="输入自动回复的内容..."
+                rows={6}
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-[#FFE815] focus:ring-4 focus:ring-[#FFE815]/20 transition-all bg-gray-50 resize-none"
+              />
+              <p className="text-sm text-gray-500 mt-2 ml-1">💬 支持换行，系统将自动发送此内容给买家</p>
             </div>
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
 
       {/* 关键词发货弹窗 */}
-      {showDeliveryModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden animate-scale-in">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-blue-400 to-blue-500 p-8">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-white/30 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Truck className="w-7 h-7 text-white" />
-                  </div>
-                  <h3 className="text-3xl font-black text-white">
-                    {editingDeliveryRule ? '编辑发货规则' : '添加发货规则'}
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowDeliveryModal(false)}
-                  className="p-3 bg-white/30 backdrop-blur-sm rounded-2xl hover:bg-white/40 transition-colors"
-                >
-                  <X className="w-6 h-6 text-white" />
-                </button>
+      {showDeliveryModal && (
+        <Modal
+          isOpen={showDeliveryModal}
+          onClose={() => setShowDeliveryModal(false)}
+          title={
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center">
+                <Truck className="w-7 h-7 text-blue-500" />
               </div>
+              <h3 className="text-3xl font-black text-gray-900">
+                {editingDeliveryRule ? '编辑发货规则' : '添加发货规则'}
+              </h3>
+            </div>
+          }
+          size="md"
+          footer={
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowDeliveryModal(false)}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveDelivery}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                保存发货规则
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <Key className="w-5 h-5 text-blue-500" />
+                触发关键词
+              </label>
+              <input
+                type="text"
+                aria-label="触发关键词"
+                value={deliveryForm.keyword}
+                onChange={(e) => setDeliveryForm({ ...deliveryForm, keyword: e.target.value })}
+                placeholder="例如：发货卡密、自动发货"
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
+              />
+              <p className="text-sm text-gray-500 mt-2 ml-1">💡 买家消息中包含此关键词时自动发货</p>
             </div>
 
-            {/* Body */}
-            <div className="p-8 space-y-6 overflow-y-auto max-h-[60vh]">
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <Key className="w-5 h-5 text-blue-500" />
-                  触发关键词
-                </label>
-                <input
-                  type="text"
-                  value={deliveryForm.keyword}
-                  onChange={(e) => setDeliveryForm({ ...deliveryForm, keyword: e.target.value })}
-                  placeholder="例如：发货卡密、自动发货"
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
-                />
-                <p className="text-sm text-gray-500 mt-2 ml-1">💡 买家消息中包含此关键词时自动发货</p>
-              </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <Sparkles className="w-5 h-5 text-blue-500" />
+                关联卡券
+              </label>
+              <select
+                value={deliveryForm.card_id}
+                onChange={(e) => setDeliveryForm({ ...deliveryForm, card_id: e.target.value })}
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
+              >
+                <option value="">请选择卡券</option>
+                {cards.map((card) => (
+                  <option key={card.id} value={card.id}>
+                    {card.name || card.text_content?.substring(0, 30) || `卡券 ${card.id}`}
+                    {card.is_multi_spec && ` [${card.spec_name}: ${card.spec_value}]`}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-gray-500 mt-2 ml-1">🎁 选择触发关键词时发送的卡券</p>
+            </div>
 
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <Sparkles className="w-5 h-5 text-blue-500" />
-                  关联卡券
-                </label>
-                <select
-                  value={deliveryForm.card_id}
-                  onChange={(e) => setDeliveryForm({ ...deliveryForm, card_id: e.target.value })}
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
-                >
-                  <option value="">请选择卡券</option>
-                  {cards.map((card) => (
-                    <option key={card.id} value={card.id}>
-                      {card.name || card.text_content?.substring(0, 30) || `卡券 ${card.id}`}
-                      {card.is_multi_spec && ` [${card.spec_name}: ${card.spec_value}]`}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-sm text-gray-500 mt-2 ml-1">🎁 选择触发关键词时发送的卡券</p>
-              </div>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <MessageSquare className="w-5 h-5 text-blue-500" />
+                描述（可选）
+              </label>
+              <input
+                type="text"
+                aria-label="描述"
+                value={deliveryForm.description}
+                onChange={(e) => setDeliveryForm({ ...deliveryForm, description: e.target.value })}
+                placeholder="规则描述，方便识别"
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
+              />
+            </div>
 
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <MessageSquare className="w-5 h-5 text-blue-500" />
-                  描述（可选）
-                </label>
-                <input
-                  type="text"
-                  value={deliveryForm.description}
-                  onChange={(e) => setDeliveryForm({ ...deliveryForm, description: e.target.value })}
-                  placeholder="规则描述，方便识别"
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-400/20 transition-all bg-gray-50"
-                />
+            <div className="flex items-center justify-between p-5 bg-gradient-to-r from-blue-50 to-blue-100/50 rounded-2xl border-2 border-blue-200">
+              <div className="flex items-center gap-3">
+                <Power className="w-6 h-6 text-blue-500" />
+                <span className="text-base font-black text-gray-900">启用此规则</span>
               </div>
-
-              <div className="flex items-center justify-between p-5 bg-gradient-to-r from-blue-50 to-blue-100/50 rounded-2xl border-2 border-blue-200">
-                <div className="flex items-center gap-3">
-                  <Power className="w-6 h-6 text-blue-500" />
-                  <span className="text-base font-black text-gray-900">启用此规则</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDeliveryForm({ ...deliveryForm, enabled: !deliveryForm.enabled })}
-                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
-                    deliveryForm.enabled ? 'bg-blue-500' : 'bg-gray-300'
+              <button
+                type="button"
+                onClick={() => setDeliveryForm({ ...deliveryForm, enabled: !deliveryForm.enabled })}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
+                  deliveryForm.enabled ? 'bg-blue-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                    deliveryForm.enabled ? 'translate-x-8' : 'translate-x-1'
                   }`}
-                >
-                  <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                      deliveryForm.enabled ? 'translate-x-8' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="p-8 bg-gray-50 border-t border-gray-100">
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setShowDeliveryModal(false)}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSaveDelivery}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-blue-400 to-blue-500 hover:from-blue-500 hover:to-blue-600 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
-                >
-                  <Save className="w-5 h-5" />
-                  保存发货规则
-                </button>
-              </div>
+                />
+              </button>
             </div>
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
 
       {/* 账号默认回复弹窗 */}
-      {showDefaultModal && createPortal(
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden animate-scale-in">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-purple-400 to-purple-500 p-8">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-white/30 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                    <Bot className="w-7 h-7 text-white" />
-                  </div>
-                  <h3 className="text-3xl font-black text-white">
-                    账号默认回复
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowDefaultModal(false)}
-                  className="p-3 bg-white/30 backdrop-blur-sm rounded-2xl hover:bg-white/40 transition-colors"
-                >
-                  <X className="w-6 h-6 text-white" />
-                </button>
+      {showDefaultModal && (
+        <Modal
+          isOpen={showDefaultModal}
+          onClose={() => setShowDefaultModal(false)}
+          title={
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center">
+                <Bot className="w-7 h-7 text-purple-500" />
               </div>
+              <h3 className="text-3xl font-black text-gray-900">
+                账号默认回复
+              </h3>
+            </div>
+          }
+          size="md"
+          footer={
+            <div className="flex gap-4">
+              <button
+                onClick={() => setShowDefaultModal(false)}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveDefault}
+                className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-purple-400 to-purple-500 hover:from-purple-500 hover:to-purple-600 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                保存默认回复
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <Bot className="w-5 h-5 text-purple-500" />
+                账号
+              </label>
+              <select
+                value={defaultForm.cookie_id}
+                onChange={(e) => setDefaultForm({ ...defaultForm, cookie_id: e.target.value })}
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50"
+              >
+                <option value="">请选择账号</option>
+                {accounts.map((acc) => (
+                  <option key={acc.id} value={acc.id}>
+                    {acc.nickname}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-gray-500 mt-2 ml-1">🤖 为此账号设置默认回复内容</p>
             </div>
 
-            {/* Body */}
-            <div className="p-8 space-y-6 overflow-y-auto max-h-[60vh]">
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <Bot className="w-5 h-5 text-purple-500" />
-                  账号
-                </label>
-                <select
-                  value={defaultForm.cookie_id}
-                  onChange={(e) => setDefaultForm({ ...defaultForm, cookie_id: e.target.value })}
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50"
-                >
-                  <option value="">请选择账号</option>
-                  {accounts.map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.nickname}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-sm text-gray-500 mt-2 ml-1">🤖 为此账号设置默认回复内容</p>
+            <div className="flex items-center justify-between p-5 bg-gradient-to-r from-purple-50 to-purple-100/50 rounded-2xl border-2 border-purple-200">
+              <div className="flex items-center gap-3">
+                <Power className="w-6 h-6 text-purple-500" />
+                <span className="text-base font-black text-gray-900">启用默认回复</span>
               </div>
-
-              <div className="flex items-center justify-between p-5 bg-gradient-to-r from-purple-50 to-purple-100/50 rounded-2xl border-2 border-purple-200">
-                <div className="flex items-center gap-3">
-                  <Power className="w-6 h-6 text-purple-500" />
-                  <span className="text-base font-black text-gray-900">启用默认回复</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDefaultForm({ ...defaultForm, enabled: !defaultForm.enabled })}
-                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
-                    defaultForm.enabled ? 'bg-purple-500' : 'bg-gray-300'
+              <button
+                type="button"
+                onClick={() => setDefaultForm({ ...defaultForm, enabled: !defaultForm.enabled })}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
+                  defaultForm.enabled ? 'bg-purple-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                    defaultForm.enabled ? 'translate-x-8' : 'translate-x-1'
                   }`}
-                >
-                  <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                      defaultForm.enabled ? 'translate-x-8' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <MessageSquare className="w-5 h-5 text-purple-500" />
-                  回复内容
-                </label>
-                <textarea
-                  value={defaultForm.reply_content}
-                  onChange={(e) => setDefaultForm({ ...defaultForm, reply_content: e.target.value })}
-                  placeholder="输入默认回复的内容..."
-                  rows={6}
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50 resize-none"
                 />
-                <p className="text-sm text-gray-500 mt-2 ml-1">💬 当没有匹配的关键词时，系统将自动发送此内容</p>
-              </div>
-
-              <div className="flex items-center justify-between p-5 bg-gradient-to-r from-amber-50 to-amber-100/50 rounded-2xl border-2 border-amber-200">
-                <div className="flex items-center gap-3">
-                  <span className="text-base font-black text-gray-900">🔁 只回复一次</span>
-                  <span className="text-xs text-gray-500">启用后，每个对话只使用一次默认回复</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDefaultForm({ ...defaultForm, reply_once: !defaultForm.reply_once })}
-                  className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
-                    defaultForm.reply_once ? 'bg-amber-500' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                      defaultForm.reply_once ? 'translate-x-8' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
-                  <Sparkles className="w-5 h-5 text-purple-500" />
-                  回复图片URL（可选）
-                </label>
-                <input
-                  type="text"
-                  value={defaultForm.reply_image_url}
-                  onChange={(e) => setDefaultForm({ ...defaultForm, reply_image_url: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
-                  className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50"
-                />
-                <p className="text-sm text-gray-500 mt-2 ml-1">🖼️ 可选：添加图片URL一起发送</p>
-              </div>
+              </button>
             </div>
 
-            {/* Footer */}
-            <div className="p-8 bg-gray-50 border-t border-gray-100">
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setShowDefaultModal(false)}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 text-gray-700 transition-all shadow-lg hover:shadow-xl"
-                >
-                  取消
-                </button>
-                <button
-                  onClick={handleSaveDefault}
-                  className="flex-1 px-8 py-4 rounded-2xl font-bold bg-gradient-to-r from-purple-400 to-purple-500 hover:from-purple-500 hover:to-purple-600 text-white shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center justify-center gap-2"
-                >
-                  <Save className="w-5 h-5" />
-                  保存默认回复
-                </button>
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <MessageSquare className="w-5 h-5 text-purple-500" />
+                回复内容
+              </label>
+              <textarea
+                value={defaultForm.reply_content}
+                onChange={(e) => setDefaultForm({ ...defaultForm, reply_content: e.target.value })}
+                placeholder="输入默认回复的内容..."
+                rows={6}
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50 resize-none"
+              />
+              <p className="text-sm text-gray-500 mt-2 ml-1">💬 当没有匹配的关键词时，系统将自动发送此内容</p>
+            </div>
+
+            <div className="flex items-center justify-between p-5 bg-gradient-to-r from-amber-50 to-amber-100/50 rounded-2xl border-2 border-amber-200">
+              <div className="flex items-center gap-3">
+                <span className="text-base font-black text-gray-900">🔁 只回复一次</span>
+                <span className="text-xs text-gray-500">启用后，每个对话只使用一次默认回复</span>
               </div>
+              <button
+                type="button"
+                onClick={() => setDefaultForm({ ...defaultForm, reply_once: !defaultForm.reply_once })}
+                className={`relative inline-flex h-7 w-14 items-center rounded-full transition-all duration-300 ${
+                  defaultForm.reply_once ? 'bg-amber-500' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                    defaultForm.reply_once ? 'translate-x-8' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            <div>
+              <label className="flex items-center gap-2 text-sm font-black text-gray-900 mb-3">
+                <Sparkles className="w-5 h-5 text-purple-500" />
+                回复图片URL（可选）
+              </label>
+              <input
+                type="text"
+                aria-label="回复图片URL"
+                inputMode="url"
+                value={defaultForm.reply_image_url}
+                onChange={(e) => setDefaultForm({ ...defaultForm, reply_image_url: e.target.value })}
+                placeholder="https://example.com/image.jpg"
+                className="w-full px-6 py-4 rounded-2xl font-medium border-2 border-gray-200 focus:border-purple-400 focus:ring-4 focus:ring-purple-400/20 transition-all bg-gray-50"
+              />
+              <p className="text-sm text-gray-500 mt-2 ml-1">🖼️ 可选：添加图片URL一起发送</p>
             </div>
           </div>
-        </div>,
-        document.body
+        </Modal>
       )}
     </div>
   );

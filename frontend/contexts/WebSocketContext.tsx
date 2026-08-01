@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { useWebSocket, WsEvent } from '../hooks/useWebSocket';
 
 interface WebSocketContextValue {
@@ -37,7 +37,7 @@ export const WebSocketProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, [events]);
 
   return (
-    <WebSocketContext.Provider value={{ connected, events, onEvent }}>
+    <WebSocketContext.Provider value={useMemo(() => ({ connected, events, onEvent }), [connected, events, onEvent])}>
       {children}
     </WebSocketContext.Provider>
   );
